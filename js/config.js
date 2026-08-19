@@ -82,12 +82,15 @@
   }
 
   function hasValues(cfg) {
-    return !!(cfg && (cfg.mapsApiKey || (cfg.firebase && cfg.firebase.apiKey)));
+    return !!(cfg && (cfg.mapsApiKey || cfg.orsApiKey || cfg.mapProvider ||
+      (cfg.firebase && cfg.firebase.apiKey)));
   }
 
   function normalize(cfg) {
     return {
-      mapsApiKey: (cfg && cfg.mapsApiKey) || '',
+      mapProvider: (cfg && cfg.mapProvider) || '',      // '' | 'osm' | 'google'
+      orsApiKey: (cfg && cfg.orsApiKey) || '',          // OpenRouteService
+      mapsApiKey: (cfg && cfg.mapsApiKey) || '',        // Google Maps
       firebase: Object.assign({
         apiKey: '', authDomain: '', databaseURL: '', projectId: '', appId: ''
       }, (cfg && cfg.firebase) || {})

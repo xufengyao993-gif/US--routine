@@ -8,6 +8,7 @@
   <img src="docs/screenshot.png" width="700" alt="桌面界面" />
   <img src="docs/screenshot-mobile.png" width="215" alt="手机界面" />
 </p>
+<p align="center"><sub>截图在离线环境下渲染，地图底图是空白的；实际使用时是 OpenStreetMap 的街道图。</sub></p>
 <p align="center">
   <img src="docs/screenshot-history.png" width="700" alt="修改记录与撤销" />
 </p>
@@ -84,11 +85,30 @@ Settings → General → 最下面 Danger Zone → Change visibility → Public�
 > 工作流目前监听 `main` 和 `claude/us-trip-itinerary-planner-alg1ty` 两个分支，
 > 方便合并前先在手机上试。只想让 `main` 上线的话，把分支列表里的另一个删掉即可。
 
-### 2. Google Maps API Key
+### 2. 地图（两选一）
+
+应用支持两套地图服务，在「⚙️ 设置 → 地图服务」里切换。
+
+**A. OpenStreetMap（默认，不用信用卡）**
+
+开箱即用 —— 地图打点、连线、点选联动**什么都不用配**就能看。想要真实路网耗时再补一个免费 Key：
+
+1. 到 [OpenRouteService](https://openrouteservice.org/dev/#/signup) 用邮箱注册（免费，不需要信用卡）
+2. 登录后在控制台申请一个 **Standard** token，复制
+3. 应用内「⚙️ 设置 → OpenRouteService Key」粘贴
+
+免费额度每天 2000 次路线查询，个人排行程用不完。
+
+短板要知道：**没有实时路况**（开车耗时偏乐观）、**不支持公共交通**（那一档继续按直线估算）、POI 搜索不如 Google 全。
+
+**B. Google 地图（需要已绑卡的 Google Cloud 账号）**
 
 1. 到 [Google Cloud Console](https://console.cloud.google.com/google/maps-apis/credentials) 创建 API Key
 2. 启用三个 API：**Maps JavaScript API**、**Directions API**、**Places API**
 3. 给 Key 加「HTTP 引用来源」限制，填上你的 Pages 域名：`https://<用户名>.github.io/*`
+
+> ⚠️ **Google Cloud 在中国大陆不提供付费服务**，结算账号的国家/地区列表里没有中国大陆，
+> 也就拿不到 Maps Key。国内用户走上面的 OpenStreetMap 方案。
 
 ### 3. Firebase 实时数据库（多人同步用）
 
@@ -109,7 +129,8 @@ Settings → General → 最下面 Danger Zone → Change visibility → Public�
 
 | Secret 名 | 值 |
 | --- | --- |
-| `MAPS_API_KEY` | 第 2 步的 Maps Key |
+| `MAPS_API_KEY` | Google Maps Key（走 OpenStreetMap 就留空） |
+| `ORS_API_KEY` | OpenRouteService Key |
 | `FIREBASE_API_KEY` | firebaseConfig.apiKey |
 | `FIREBASE_AUTH_DOMAIN` | firebaseConfig.authDomain |
 | `FIREBASE_DATABASE_URL` | firebaseConfig.databaseURL（`https://xxx.firebasedatabase.app`） |
@@ -164,7 +185,10 @@ js/model.js            ★ 数据模型：键值表 + order 排序号，多人�
 js/schedule.js         ★ 时间推算引擎（纯函数，不依赖 DOM，可单测）
 js/sync.js             ★ Firebase 实时同步：本地优先、按路径推补丁、在线状态、修改记录
 js/dragsort.js           拖拽排序（Pointer Events，手机触摸和鼠标共用，支持自动滚动）
-js/maps.js               Google Maps：打点、连线、Directions、Places
+js/maps.js               地图门面：按配置选用下面两套实现之一
+js/maps-osm.js           OpenStreetMap 实现：Leaflet + OpenRouteService + Photon（免费）
+js/maps-google.js        Google 实现：Maps + Directions + Places
+vendor/leaflet/          Leaflet 1.9.4，随仓库部署，不依赖 CDN
 js/store.js              本地缓存（行程 / 路段耗时）
 js/data.js               示例行程
 js/app.js                界面渲染与交互
@@ -192,6 +216,7 @@ npm install                # 下面两个需要 playwright
 node test/browser.js       # 手机 + 桌面：布局、PWA、弹窗、编辑、持久化
 node test/dragundo.js      # 拖拽排序（鼠标 + 触摸）、修改记录、撤销
 node test/datesort.js      # 日期自动 +1 与顺延、按固定时间自动重排（东八区下跑）
+node test/osmmap.js        # OpenStreetMap 地图：打点连线、真实路程、地点搜索
 node test/fakedb.js &      # 内存版实时数据库
 node test/collab.js        # 两个客户端同时改，验证实时同步与不覆盖
 ```
@@ -201,7 +226,9 @@ node test/collab.js        # 两个客户端同时改，验证实时同步与不
 个人小规模使用基本落在免费额度内：
 
 - **Firebase 实时数据库**：免费档 1GB 存储 / 10GB 月流量。一份行程几十 KB，几个人改一个月连零头都用不到。
-- **Google Maps**：每月有免费额度。路程查询结果按「起点 + 终点 + 交通方式」缓存在本地，只有加点、调顺序或换交通方式才会重新请求，日常编辑不会反复消耗。
+- **OpenStreetMap + OpenRouteService**：完全免费。瓦片不用注册，路线每天 2000 次免费额度。
+- **Google Maps**（如果你走这条）：每月有免费额度，但必须先绑卡。
+- 两者的路程查询结果都按「起点 + 终点 + 交通方式」缓存在本地，只有加点、调顺序或换交通方式才会重新请求。
 - **GitHub Pages**：公开仓库免费。
 
 ## 后续可做

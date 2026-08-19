@@ -74,9 +74,13 @@
     legCache = {};
   }
 
+  // 不同地图服务算出来的耗时和路线格式都不一样，缓存要分开放
+  let provider = 'osm';
+  function setProvider(name) { provider = name || 'osm'; }
+
   function legKey(from, to, mode) {
     const r = function (n) { return n == null ? 'x' : Number(n).toFixed(4); };
-    return mode + '|' + r(from.lat) + ',' + r(from.lng) + '>' + r(to.lat) + ',' + r(to.lng);
+    return provider + '|' + mode + '|' + r(from.lat) + ',' + r(from.lng) + '>' + r(to.lat) + ',' + r(to.lng);
   }
 
   function getLeg(from, to, mode) {
@@ -126,6 +130,7 @@
     sampleTrip: sampleTrip,
     loadHistory: loadHistory,
     saveHistory: saveHistory,
+    setProvider: setProvider,
     getLeg: getLeg,
     putLeg: putLeg,
     newStop: newStop,

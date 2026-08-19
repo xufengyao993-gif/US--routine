@@ -387,6 +387,72 @@ html, body {
 .member .avatar { margin-left: 0; }
 #shareLink { font-size: 12px; }
 
+/* ---------- OpenStreetMap：自绘编号图钉 ---------- */
+.osm-pin { background: none; border: 0; }
+.osm-pin-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  border: 2px solid #fff;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, .35);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: inherit;
+}
+.osm-pin-body::first-letter { display: inline-block; }
+.osm-pin .osm-pin-body { transform: rotate(-45deg); }
+.osm-pin.is-active .osm-pin-body {
+  width: 34px; height: 34px;
+  font-size: 14px;
+  border-color: #0f172a;
+}
+/* 数字要转回来才是正的 */
+.osm-pin-body { position: relative; }
+.osm-pin-body > * { transform: rotate(45deg); }
+
+/* Leaflet 的层级要压在弹窗和菜单下面 */
+.leaflet-pane, .leaflet-control { z-index: 1 !important; }
+.leaflet-container { font: inherit; }
+
+/* ---------- 地点搜索建议 ---------- */
+.field { position: relative; }
+.osm-suggest {
+  position: absolute;
+  left: 0; right: 0; top: 100%;
+  margin-top: 4px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  z-index: 10001;
+  max-height: 260px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.osm-suggest-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 9px 12px;
+  cursor: pointer;
+  font-family: inherit;
+  border-bottom: 1px solid var(--line);
+}
+.osm-suggest-item:last-child { border-bottom: 0; }
+.osm-suggest-item:hover, .osm-suggest-item:focus-visible { background: #f1f5f9; }
+.osm-suggest-name { font-size: 14px; font-weight: 600; color: var(--ink); }
+.osm-suggest-addr { font-size: 12px; color: var(--ink-mute); }
+.osm-suggest-empty { padding: 10px 12px; font-size: 13px; color: var(--ink-mute); }
+
 /* ---------- 拖拽排序 ---------- */
 .stop-grip { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 0 0 24px; }
 .drag-handle {

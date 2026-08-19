@@ -1,7 +1,7 @@
 global.window = global;
 global.crypto = require('crypto').webcrypto;
 const R = require('path').join(__dirname, '..', 'js') + '/';
-require(R+'util.js'); require(R+'model.js'); require(R+'schedule.js'); require(R+'data.js'); require(R+'config.js');
+require(R+'util.js'); require(R+'model.js'); require(R+'schedule.js'); require(R+'data.js'); require(R+'config.js'); require(R+'store.js'); require(R+'maps-osm.js'); require(R+'maps.js');
 const { Schedule, Util, Model, SampleTrip } = global;
 let n = 0; const ok = (c, m) => { n++; if (!c) { console.error('❌ ' + m); process.exitCode = 1; } };
 
@@ -183,5 +183,65 @@ ok(P('') === null, '空输入返回 null');
 // 值里带特殊字符不能被规范化搞坏
 const tricky = P(`{ apiKey: "AIzaSyTEST", databaseURL: "https://x-default-rtdb.firebaseio.com", authDomain: "a-b.firebaseapp.com" }`);
 ok(tricky.authDomain === 'a-b.firebaseapp.com', '值里的 // 和连字符不受影响');
+
+/* --- 10. 地图服务的选择 --- */
+const Maps = global.Maps;
+ok(Maps.pick({}) === 'osm', '什么都没配时默认用 OpenStreetMap');
+ok(Maps.pick({ mapsApiKey: 'AIza...' }) === 'google', '填了 Google Key 就用 Google');
+ok(Maps.pick({ mapProvider: 'osm', mapsApiKey: 'AIza...' }) === 'osm', '显式指定优先于 Key');
+ok(Maps.pick({ mapProvider: 'google' }) === 'google', '显式指定 Google');
+ok(Maps.pick({ mapProvider: '乱填' }) === 'osm', '指定了不认识的服务时退回 OSM');
+ok(Maps.keyFor('osm', { orsApiKey: 'ORS', mapsApiKey: 'G' }) === 'ORS', 'OSM 用 OpenRouteService 的 Key');
+ok(Maps.keyFor('google', { orsApiKey: 'ORS', mapsApiKey: 'G' }) === 'G', 'Google 用自己的 Key');
+
+/* --- 11. 路段缓存按地图服务分开 --- */
+const S = global.Store;
+const A = { lat: 37.78, lng: -122.41 }, B = { lat: 37.80, lng: -122.47 };
+S.setProvider('osm');
+S.putLeg(A, B, 'DRIVING', { minutes: 20, km: 8, path: [[1, 2]] });
+ok(S.getLeg(A, B, 'DRIVING').minutes === 20, 'OSM 的缓存能读回来');
+S.setProvider('google');
+ok(S.getLeg(A, B, 'DRIVING') === null, '换成 Google 后读不到 OSM 的缓存（格式不同，不能混）');
+S.putLeg(A, B, 'DRIVING', { minutes: 15, km: 8, encoded: 'abc' });
+ok(S.getLeg(A, B, 'DRIVING').minutes === 15, 'Google 有自己的一份');
+S.setProvider('osm');
+ok(S.getLeg(A, B, 'DRIVING').minutes === 20, '切回来还是 OSM 那份');
+
+/* --- 12. OpenRouteService 返回值解析 --- */
+const OSM = global.MapsOSM;
+const route = OSM.parseRoute({
+  features: [{
+    properties: { summary: { duration: 1382, distance: 9423 } },
+    geometry: { coordinates: [[-122.41, 37.78], [-122.45, 37.80]] }
+  }]
+});
+ok(route.minutes === 23, '秒换算成分钟：' + route.minutes);
+ok(route.km === 9.4, '米换算成公里：' + route.km);
+ok(route.estimated === false, '标记为真实数据');
+ok(route.path[0][0] === 37.78 && route.path[0][1] === -122.41, 'GeoJSON 的经纬度顺序被翻转成 [纬度, 经度]');
+ok(OSM.parseRoute({ features: [] }) === null, '空结果返回 null');
+ok(OSM.parseRoute({}) === null, '坏数据返回 null');
+ok(OSM.parseRoute({ features: [{ properties: {} }] }) === null, '缺 summary 返回 null');
+// 极短的路程也要至少算 1 分钟，不能出现 0
+ok(OSM.parseRoute({ features: [{ properties: { summary: { duration: 8, distance: 40 } },
+  geometry: { coordinates: [] } }] }).minutes === 1, '不足一分钟按 1 分钟算');
+
+/* --- 13. Photon 搜索结果转换 --- */
+const place = OSM.toPlace({
+  properties: { name: 'Tartine Bakery', osm_key: 'amenity', osm_value: 'cafe',
+    housenumber: '600', street: 'Guerrero St', city: 'San Francisco', state: 'California', country: 'United States' },
+  geometry: { coordinates: [-122.4241, 37.7614] }
+});
+ok(place.name === 'Tartine Bakery', '取到名字');
+ok(place.lat === 37.7614 && place.lng === -122.4241, '经纬度翻转正确');
+ok(place.address === '600 Guerrero St, San Francisco, California, United States', '地址拼接：' + place.address);
+ok(place.types.indexOf('restaurant') >= 0, '咖啡馆识别成餐饮，会自动归到「吃饭」');
+
+const hotel = OSM.toPlace({ properties: { name: 'Hotel Zeppelin', osm_key: 'tourism', osm_value: 'hotel' },
+  geometry: { coordinates: [-122.41, 37.78] } });
+ok(hotel.types.indexOf('lodging') >= 0, '酒店识别成住宿');
+const park = OSM.toPlace({ properties: { name: 'Dolores Park', osm_key: 'leisure', osm_value: 'park' },
+  geometry: { coordinates: [-122.42, 37.75] } });
+ok(park.types.indexOf('park') >= 0, '公园识别成户外');
 
 console.log(process.exitCode ? '有断言失败' : `全部 ${n} 条断言通过 ✅`);

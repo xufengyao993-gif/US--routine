@@ -182,6 +182,20 @@
       </label>
 
       <label class="field">
+        <span>地图服务</span>
+        <select id="f-provider">
+          <option value="">自动（有 Google Key 就用 Google，否则用 OpenStreetMap）</option>
+          <option value="osm">OpenStreetMap（免费，不用信用卡）</option>
+          <option value="google">Google 地图（需要 Key 和已绑卡的账号）</option>
+        </select>
+      </label>
+
+      <label class="field" id="field-ors">
+        <span>OpenRouteService Key（算真实路程用，<a href="https://openrouteservice.org/dev/#/signup" target="_blank" rel="noopener">邮箱注册免费领</a>）</span>
+        <input id="f-ors" type="text" placeholder="不填也能看地图，只是路程按直线估算" autocomplete="off" />
+      </label>
+
+      <label class="field" id="field-gmaps">
         <span>Google Maps API Key</span>
         <input id="f-key" type="text" placeholder="AIza..." autocomplete="off" />
       </label>
@@ -208,6 +222,8 @@
   <script src="js/data.js"></script>
   <script src="js/store.js"></script>
   <script src="js/schedule.js"></script>
+  <script src="js/maps-google.js"></script>
+  <script src="js/maps-osm.js"></script>
   <script src="js/maps.js"></script>
   <script src="js/sync.js"></script>
   <script src="js/dragsort.js"></script>

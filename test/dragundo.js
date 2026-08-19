@@ -1,4 +1,5 @@
 /* 拖拽排序 + 修改记录 / 撤销（本地模式，不需要 Firebase） */
+const { stubTiles } = require('./helpers');
 const { chromium, devices } = require('playwright');
 const URL = 'http://127.0.0.1:8123/index.html?trip=dragtest0000000000000001';
 
@@ -10,6 +11,7 @@ const ok = (c, m) => { console.log((c ? '✅ ' : '❌ ') + m); if (!c) fails++; 
 
   /* ---------- 桌面：鼠标拖拽 ---------- */
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  await stubTiles(ctx);
   const p = await ctx.newPage();
   p.on('dialog', d => d.accept());
   p.on('pageerror', e => { console.log('PAGEERROR', e.message); fails++; });
@@ -114,6 +116,7 @@ const ok = (c, m) => { console.log((c ? '✅ ' : '❌ ') + m); if (!c) fails++; 
 
   /* ---------- 手机：触摸拖拽 ---------- */
   const mctx = await browser.newContext(devices['iPhone 13']);
+  await stubTiles(mctx);
   const m = await mctx.newPage();
   m.on('pageerror', e => { console.log('PAGEERROR[mobile]', e.message); fails++; });
   await m.goto(URL, { waitUntil: 'domcontentloaded' });

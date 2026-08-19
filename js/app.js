@@ -48,9 +48,7 @@
       onStatus: onSyncStatus
     });
 
-    // 地图
-    if (cfg.mapsApiKey) startMaps(cfg.mapsApiKey);
-    else showMapNotice('还没填 Google Maps API Key。时间轴照常可用（路程按直线距离估算），填上 Key 后就有地图打点、连线和真实路况耗时。', true);
+    startMaps(cfg);
   }
 
   function resolveTripId() {
@@ -66,12 +64,27 @@
     return id;
   }
 
-  function startMaps(key) {
+  function startMaps(cfg) {
+    const provider = M.use(M.pick(cfg));
+    const key = M.keyFor(provider, cfg);
+
+    if (M.needsKey() && !key) {
+      showMapNotice('还没填 Google Maps API Key。时间轴照常可用（路程按直线距离估算），填上 Key 后就有地图打点、连线和真实路况耗时。', true);
+      return;
+    }
+
     showMapNotice('地图加载中…', false);
     M.loadApi(key).then(function () {
       M.initMap($('map'));
       hideMapNotice();
       attachDialogAutocomplete();
+      // 先把点和连线画出来（用缓存或估算），别等路程查询跑完
+      render();
+      // 手机上地图默认是隐藏的，切过去时要重新量尺寸
+      setTimeout(M.resize, 100);
+      if (provider === 'osm' && !key) {
+        toast('地图已就绪。路程仍按直线估算 —— 填个 OpenRouteService Key 就有真实路网耗时（免费、不用信用卡）');
+      }
       return refreshLegs(true);
     }).catch(function (err) {
       console.error(err);
@@ -934,7 +947,7 @@
     });
 
     $('refreshBtn').addEventListener('click', function () {
-      if (!M.isReady()) { toast('需要先填 Google Maps API Key'); return; }
+      if (!M.isReady()) { toast('地图还没就绪，先去 ⚙️ 设置里配一下'); return; }
       refreshLegs(false);
     });
     $('sortBtn').addEventListener('click', function () {
@@ -978,6 +991,7 @@
       location.reload();
     });
     $('settingsForm').addEventListener('submit', saveSettings);
+    $('f-provider').addEventListener('change', syncProviderFields);
   }
 
   function bindMobileTabs() {
@@ -1028,7 +1042,10 @@
   function openSettings() {
     const cfg = Config.load();
     $('f-nick').value = Sync.myName();
+    $('f-provider').value = cfg.mapProvider || '';
+    $('f-ors').value = cfg.orsApiKey || '';
     $('f-key').value = cfg.mapsApiKey || '';
+    syncProviderFields();
     $('f-fb').value = cfg.firebase && cfg.firebase.apiKey ? JSON.stringify(cfg.firebase, null, 2) : '';
     const src = Config.getSource();
     $('configSource').textContent = {
@@ -1037,6 +1054,17 @@
       none: '当前没有任何配置：地图和协作都不可用，时间轴仍可正常使用。'
     }[src];
     $('settingsDialog').showModal();
+  }
+
+  /** 选了哪套地图，就只显示那套要填的 Key */
+  function syncProviderFields() {
+    const chosen = M.pick({
+      mapProvider: $('f-provider').value,
+      mapsApiKey: $('f-key').value.trim(),
+      orsApiKey: $('f-ors').value.trim()
+    });
+    $('field-ors').hidden = chosen !== 'osm';
+    $('field-gmaps').hidden = chosen !== 'google';
   }
 
   function saveSettings(e) {
@@ -1064,7 +1092,12 @@
       }
     }
 
-    Config.save({ mapsApiKey: $('f-key').value.trim(), firebase: firebase || {} });
+    Config.save({
+      mapProvider: $('f-provider').value,
+      orsApiKey: $('f-ors').value.trim(),
+      mapsApiKey: $('f-key').value.trim(),
+      firebase: firebase || {}
+    });
     $('settingsDialog').close();
     location.reload();
   }

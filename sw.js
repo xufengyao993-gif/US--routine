@@ -22,6 +22,10 @@ const SHELL = [
   './js/store.js',
   './js/schedule.js',
   './js/maps.js',
+  './js/maps-google.js',
+  './js/maps-osm.js',
+  './vendor/leaflet/leaflet.js',
+  './vendor/leaflet/leaflet.css',
   './js/sync.js',
   './js/dragsort.js',
   './js/app.js'

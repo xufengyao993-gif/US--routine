@@ -28,6 +28,18 @@ node test/dragundo.js
 修改记录的内容与时间、逐条撤销、Ctrl+Z 撤销自己最近一次、
 删除后撤销能整条还原、目标已被删除时拒绝撤销并说明原因、刷新后记录仍在。
 
+## OpenStreetMap 地图
+
+```bash
+node test/osmmap.js
+```
+
+用 Playwright 拦掉地图瓦片、OpenRouteService 和 Photon 的请求（沙盒里访问不到），
+验证：不填任何 Key 也能出地图、编号图钉与连线、拿到真实耗时后「估算」标签消失、
+公交段如实标注估算、地点搜索下拉与回填、餐饮自动归类、设置里切换服务时 Key 输入框的显隐。
+
+`test/helpers.js` 里是这些桩，其他浏览器测试也用它挡掉瓦片请求。
+
 ## 日期与自动排序
 
 ```bash

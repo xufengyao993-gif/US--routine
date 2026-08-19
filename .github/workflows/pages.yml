@@ -7,7 +7,7 @@
 # 可选：仓库 Settings -> Secrets and variables -> Actions 里加下面这些 Secret，
 # 部署时会注入到 js/app-config.js，朋友打开链接即用。不加也能用——
 # 应用会退化成本地模式，也可以在应用内「⚙️ 设置」里手填（更适合手机操作）：
-#   MAPS_API_KEY, FIREBASE_API_KEY, FIREBASE_AUTH_DOMAIN,
+#   MAPS_API_KEY, ORS_API_KEY, FIREBASE_API_KEY, FIREBASE_AUTH_DOMAIN,
 #   FIREBASE_DATABASE_URL, FIREBASE_PROJECT_ID, FIREBASE_APP_ID
 name: Deploy to GitHub Pages
 
@@ -36,6 +36,7 @@ jobs:
       - name: 注入运行时配置（来自仓库 Secrets）
         env:
           MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
+          ORS_API_KEY: ${{ secrets.ORS_API_KEY }}
           FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
           FIREBASE_AUTH_DOMAIN: ${{ secrets.FIREBASE_AUTH_DOMAIN }}
           FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
@@ -46,6 +47,7 @@ jobs:
             const fs = require("fs");
             const cfg = {
               mapsApiKey: process.env.MAPS_API_KEY || "",
+              orsApiKey: process.env.ORS_API_KEY || "",
               firebase: {
                 apiKey: process.env.FIREBASE_API_KEY || "",
                 authDomain: process.env.FIREBASE_AUTH_DOMAIN || "",
