@@ -63,9 +63,19 @@
 
 ### 1. 打开 GitHub Pages
 
-仓库 **Settings → Pages → Build and deployment → Source** 选 **GitHub Actions**。
+**私有仓库的 Pages 需要 GitHub Pro 及以上**。免费账号请先把仓库改成公开：
+Settings → General → 最下面 Danger Zone → Change visibility → Public。
 
-推代码后，`.github/workflows/pages.yml` 会自动构建并上线，地址形如
+> 改公开安全吗？安全。仓库里没有任何密钥：`js/app-config.js` 是空占位，
+> 真正的 Key 存在仓库 Secrets 里（公开仓库的 Secrets 依然是私密的），
+> 行程数据存在 Firebase 不在仓库里。前端应用的 Maps Key 和 Firebase Web Config
+> 本来就会出现在浏览器里，靠域名白名单和数据库规则保护，不靠藏。
+
+然后 **Settings → Pages → Build and deployment → Source** 选 **GitHub Actions**。
+（工作流里带了 `enablement: true` 会尝试自动开启，但 Actions 的默认令牌往往没有
+创建 Pages 站点的权限，手动选一次最稳。）
+
+推代码后 `.github/workflows/pages.yml` 会自动构建上线，地址形如
 `https://<你的用户名>.github.io/US--routine/`。
 
 > 工作流目前监听 `main` 和 `claude/us-trip-itinerary-planner-alg1ty` 两个分支，
@@ -85,7 +95,12 @@
 4. **身份验证 → Sign-in method**，启用 **匿名登录**（朋友无需注册就是靠这个）
 5. 项目设置 → 「你的应用」里添加一个 Web 应用，复制出 `firebaseConfig`
 
-### 4. 把 Key 交给部署流程
+### 4. 把 Key 交给部署流程（手机上嫌麻烦可以跳过）
+
+> 只想快点用起来：跳过这一步，直接在应用内「⋯ → ⚙️ 设置」里粘贴 Maps Key 和
+> Firebase 配置即可（存在你自己的浏览器）。这种情况下生成的邀请链接会自动带上配置，
+> 朋友点开同样能用。等有电脑了再补 Secrets，让部署自带配置。
+
 
 仓库 **Settings → Secrets and variables → Actions → New repository secret**，加这几条：
 
