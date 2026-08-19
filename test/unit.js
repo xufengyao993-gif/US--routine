@@ -1,7 +1,7 @@
 global.window = global;
 global.crypto = require('crypto').webcrypto;
 const R = require('path').join(__dirname, '..', 'js') + '/';
-require(R+'util.js'); require(R+'model.js'); require(R+'schedule.js'); require(R+'data.js');
+require(R+'util.js'); require(R+'model.js'); require(R+'schedule.js'); require(R+'data.js'); require(R+'config.js');
 const { Schedule, Util, Model, SampleTrip } = global;
 let n = 0; const ok = (c, m) => { n++; if (!c) { console.error('❌ ' + m); process.exitCode = 1; } };
 
@@ -101,5 +101,48 @@ const plain = Model.toPlain(v2);
 ok(Array.isArray(plain.days) && Array.isArray(plain.days[0].stops), '导出回数组结构');
 ok(plain.days[0].stops[0].name === d1[0].name, '导出顺序正确');
 ok(Model.newTripId().length === 24, '行程 ID 24 位');
+
+/* --- 7. Firebase 配置解析：控制台原样复制的各种形态都要吃下去 --- */
+const P = global.Config.parseFirebase;
+const want = (o, note) => ok(o && o.apiKey === 'AIzaSyTEST' && o.databaseURL === 'https://x-default-rtdb.firebaseio.com', note);
+
+// 标准 JSON
+want(P('{"apiKey":"AIzaSyTEST","databaseURL":"https://x-default-rtdb.firebaseio.com"}'), '标准 JSON');
+
+// 控制台实际给的样子：键没引号 + const 前缀 + 分号
+want(P(`const firebaseConfig = {
+  apiKey: "AIzaSyTEST",
+  authDomain: "x.firebaseapp.com",
+  databaseURL: "https://x-default-rtdb.firebaseio.com",
+  projectId: "x",
+  appId: "1:2:web:3"
+};`), 'JS 对象字面量（键无引号）');
+
+// 整段 SDK 代码一起复制 —— import { initializeApp } 那个大括号不能被当成配置
+want(P(`import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
+// Your web app's Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyTEST",
+  databaseURL: "https://x-default-rtdb.firebaseio.com",
+};
+const app = initializeApp(firebaseConfig);`), '整段 SDK 代码（含 import 和注释、尾逗号）');
+
+// 单引号
+want(P("var firebaseConfig = { apiKey: 'AIzaSyTEST', databaseURL: 'https://x-default-rtdb.firebaseio.com' }"), '单引号');
+
+// 只复制了大括号里面的内容（没带括号）时应给出可读的错误
+let threw = null;
+try { P('apiKey: "AIzaSyTEST"'); } catch (e) { threw = e.message; }
+ok(threw && threw.indexOf('大括号') >= 0, '没带大括号时提示要连大括号一起复制');
+
+threw = null;
+try { P('{ "foo": 1 }'); } catch (e) { threw = e.message; }
+ok(threw && threw.indexOf('没找到') >= 0, '内容里没有 apiKey 时明确报错');
+
+ok(P('') === null, '空输入返回 null');
+
+// 值里带特殊字符不能被规范化搞坏
+const tricky = P(`{ apiKey: "AIzaSyTEST", databaseURL: "https://x-default-rtdb.firebaseio.com", authDomain: "a-b.firebaseapp.com" }`);
+ok(tricky.authDomain === 'a-b.firebaseapp.com', '值里的 // 和连字符不受影响');
 
 console.log(process.exitCode ? '有断言失败' : `全部 ${n} 条断言通过 ✅`);

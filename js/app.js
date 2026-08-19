@@ -964,13 +964,19 @@
     const raw = $('f-fb').value.trim();
     if (raw) {
       try {
-        firebase = JSON.parse(raw.replace(/^\s*(const|var|let)?\s*firebaseConfig\s*=\s*/, '').replace(/;\s*$/, ''));
+        firebase = Config.parseFirebase(raw);
       } catch (err) {
-        alert('Firebase 配置解析失败，请粘贴完整的 JSON 对象：\n' + err.message);
+        alert('Firebase 配置读不出来：\n\n' + err.message);
+        return;
+      }
+      if (!firebase || !firebase.apiKey) {
+        alert('这段配置里没有 apiKey，看看是不是复制少了。');
         return;
       }
       if (!firebase.databaseURL) {
-        alert('缺少 databaseURL。请在 Firebase 控制台创建 Realtime Database，再复制一次配置。');
+        alert('这段配置里没有 databaseURL —— 先注册应用、后建数据库就会这样。\n\n' +
+          '去 Firebase 控制台的 Realtime Database 页面，复制顶部那行网址，在配置里自己加一行：\n\n' +
+          '"databaseURL": "https://xxx-default-rtdb.firebaseio.com",');
         return;
       }
     }
