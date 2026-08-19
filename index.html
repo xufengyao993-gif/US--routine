@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>US Routine · 美国行程时间轴</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%97%BA%EF%B8%8F%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">🗺️ US Routine</div>
+    <input id="tripTitle" class="trip-title" placeholder="行程名称" />
+    <div class="topbar-actions">
+      <button id="refreshBtn" class="tool-btn" title="重新向 Google 查询各段真实路程时间">🔄 刷新路程</button>
+      <button id="copyBtn" class="tool-btn" title="把当天行程复制成文字">📋 复制当天</button>
+      <button id="exportBtn" class="tool-btn">⬇️ 导出</button>
+      <label class="tool-btn" for="importInput">⬆️ 导入</label>
+      <input id="importInput" type="file" accept="application/json" hidden />
+      <button id="resetBtn" class="tool-btn">↩️ 示例</button>
+      <button id="keyBtn" class="tool-btn">🔑 API Key</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="panel">
+      <div id="dayTabs" class="daytabs"></div>
+      <div id="dayMeta" class="daymeta"></div>
+      <div id="timeline" class="timeline"></div>
+      <div class="panel-footer">
+        <button id="addStopBtn" class="primary-btn">+ 添加地点</button>
+      </div>
+    </aside>
+
+    <main class="mapwrap">
+      <div id="map" class="map"></div>
+      <div id="mapStatus" class="map-status" hidden></div>
+      <div id="mapNotice" class="map-notice" hidden></div>
+    </main>
+  </div>
+
+  <dialog id="stopDialog" class="dialog">
+    <form id="stopForm" method="dialog" class="dialog-form">
+      <h2 id="stopDialogTitle">添加地点</h2>
+
+      <label class="field">
+        <span>搜索地点</span>
+        <input id="f-search" type="text" placeholder="填了 API Key 后可搜索，自动带回地址和坐标" autocomplete="off" />
+      </label>
+
+      <div class="field-row">
+        <label class="field">
+          <span>名称</span>
+          <input id="f-name" type="text" required />
+        </label>
+        <label class="field field-narrow">
+          <span>类型</span>
+          <select id="f-category">
+            <option value="attraction">🏛️ 景点</option>
+            <option value="food">🍜 吃饭</option>
+            <option value="hotel">🏨 住宿</option>
+            <option value="outdoor">🏞️ 户外</option>
+            <option value="shopping">🛍️ 购物</option>
+            <option value="transport">✈️ 交通</option>
+            <option value="other">📍 其他</option>
+          </select>
+        </label>
+      </div>
+
+      <label class="field">
+        <span>地址</span>
+        <input id="f-address" type="text" />
+      </label>
+
+      <div class="field-row">
+        <label class="field"><span>纬度 lat</span><input id="f-lat" type="text" inputmode="decimal" /></label>
+        <label class="field"><span>经度 lng</span><input id="f-lng" type="text" inputmode="decimal" /></label>
+      </div>
+
+      <div class="field-row">
+        <label class="field">
+          <span>停留（分钟）</span>
+          <input id="f-stay" type="number" min="0" step="5" />
+        </label>
+        <label class="field">
+          <span>怎么过来</span>
+          <select id="f-mode">
+            <option value="DRIVING">🚗 开车</option>
+            <option value="TRANSIT">🚇 公共交通</option>
+            <option value="WALKING">🚶 步行</option>
+            <option value="BICYCLING">🚲 骑行</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>固定时间</span>
+          <input id="f-fixed" type="time" title="有预约 / 门票时段时填，系统会倒推最晚出发时间" />
+        </label>
+      </div>
+
+      <label class="field">
+        <span>备注</span>
+        <textarea id="f-notes" rows="2" placeholder="订位号、停车提示、必点菜…"></textarea>
+      </label>
+
+      <div class="dialog-actions">
+        <button type="button" id="stopCancel" class="tool-btn">取消</button>
+        <button type="submit" class="primary-btn">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="keyDialog" class="dialog">
+    <form id="keyForm" method="dialog" class="dialog-form">
+      <h2>Google Maps API Key</h2>
+      <p class="dialog-hint">
+        Key 只存在你自己的浏览器里（localStorage），不会上传。需要在 Google Cloud Console 启用
+        <b>Maps JavaScript API</b>、<b>Directions API</b>、<b>Places API</b>。
+      </p>
+      <label class="field">
+        <span>API Key</span>
+        <input id="f-key" type="text" placeholder="AIza..." autocomplete="off" />
+      </label>
+      <div class="dialog-actions">
+        <button type="button" id="keyCancel" class="tool-btn">取消</button>
+        <button type="submit" class="primary-btn">保存并刷新</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="js/util.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/schedule.js"></script>
+  <script src="js/maps.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
