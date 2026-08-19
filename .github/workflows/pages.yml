@@ -1,12 +1,14 @@
 # 推代码 -> 自动构建 -> 自动上线 GitHub Pages。
 # 手机上打开的就是最新版（Service Worker 会检测到新版本并自动刷新）。
 #
-# 首次使用前需要做两件事：
-#   1. 仓库 Settings -> Pages -> Build and deployment -> Source 选 "GitHub Actions"
-#   2. 仓库 Settings -> Secrets and variables -> Actions 里加下面这些 Secret（没有就留空，
-#      应用会退化成本地模式，功能仍可用）：
-#        MAPS_API_KEY, FIREBASE_API_KEY, FIREBASE_AUTH_DOMAIN,
-#        FIREBASE_DATABASE_URL, FIREBASE_PROJECT_ID, FIREBASE_APP_ID
+# Pages 由工作流自动开启（configure-pages 的 enablement），一般不用手动配。
+# 私有仓库的 Pages 需要 GitHub Pro 及以上；免费账号把仓库改成公开即可。
+#
+# 可选：仓库 Settings -> Secrets and variables -> Actions 里加下面这些 Secret，
+# 部署时会注入到 js/app-config.js，朋友打开链接即用。不加也能用——
+# 应用会退化成本地模式，也可以在应用内「⚙️ 设置」里手填（更适合手机操作）：
+#   MAPS_API_KEY, FIREBASE_API_KEY, FIREBASE_AUTH_DOMAIN,
+#   FIREBASE_DATABASE_URL, FIREBASE_PROJECT_ID, FIREBASE_APP_ID
 name: Deploy to GitHub Pages
 
 on:
@@ -61,7 +63,11 @@ jobs:
           sed -i "s/__BUILD_ID__/${GITHUB_SHA::12}/" sw.js
           grep -n "VERSION =" sw.js
 
+      # enablement: true 让工作流自己去打开 Pages，省掉手动进仓库设置那一步。
+      # （私有仓库需要 GitHub Pro 及以上；免费账号请把仓库改成公开）
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - uses: actions/upload-pages-artifact@v3
         with:
