@@ -45,6 +45,27 @@
     localStorage.removeItem(tripKey(tripId));
   }
 
+  /* ---------- 修改记录（本地镜像，离线也看得到） ---------- */
+  const HISTORY_KEY = 'us-routine.history';
+
+  function historyKey(tripId) { return HISTORY_KEY + (tripId ? ':' + tripId : ''); }
+
+  function loadHistory(tripId) {
+    try {
+      const raw = localStorage.getItem(historyKey(tripId));
+      const list = raw ? JSON.parse(raw) : [];
+      return Array.isArray(list) ? list : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveHistory(tripId, list) {
+    try {
+      localStorage.setItem(historyKey(tripId), JSON.stringify(list));
+    } catch (e) { /* 满了就算了，云端还有 */ }
+  }
+
   /* ---------- 路段耗时缓存（省 Directions 配额） ---------- */
   let legCache = {};
   try {
@@ -105,6 +126,8 @@
     saveTrip: saveTrip,
     clearTrip: clearTrip,
     sampleTrip: sampleTrip,
+    loadHistory: loadHistory,
+    saveHistory: saveHistory,
     getLeg: getLeg,
     putLeg: putLeg,
     newStop: newStop,

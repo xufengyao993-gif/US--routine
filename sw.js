@@ -23,6 +23,7 @@ const SHELL = [
   './js/schedule.js',
   './js/maps.js',
   './js/sync.js',
+  './js/dragsort.js',
   './js/app.js'
 ];
 

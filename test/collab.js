@@ -119,6 +119,40 @@ const waitFor = async (fn, ms = 6000) => {
   const t8 = await waitFor(async () => (await B.locator('#tripTitle').inputValue()) === '改过的标题');
   ok(t8 >= 0, '标题同步（' + t8 + 'ms）');
 
+  // 同一个地点：A 改名字，B 同时改停留时间，两个改动都要在
+  const targetName = (await A.locator('.stop-name').nth(5).textContent()).replace(/^\S+\s/, '');
+  await A.locator('.stop').nth(5).locator('button', { hasText: '编辑' }).click();
+  await B.locator('.stop').nth(5).locator('button', { hasText: '编辑' }).click();   // 两人同时打开同一个点
+  await A.locator('#f-name').fill('两人同时改的点');
+  await B.locator('#f-stay').fill('123');
+  await A.locator('#stopForm button[type=submit]').click();
+  await B.waitForTimeout(400);                                                       // B 手里的表单已经是旧值了
+  await B.locator('#stopForm button[type=submit]').click();
+  const t9 = await waitFor(async () => {
+    const names = await A.locator('.stop-name').allTextContents();
+    return names.some(n => n.includes('两人同时改的点'));
+  });
+  ok(t9 >= 0, '同一个地点：A 改的名字保住了（B 保存时没拿旧值覆盖）');
+  const t9b = await waitFor(async () => (await A.locator('.stop-stay').nth(5).textContent()).includes('2 小时 3 分'));
+  ok(t9b >= 0, 'B 改的停留时间也生效（' + t9b + 'ms）：' + (await A.locator('.stop-stay').nth(5).textContent()));
+
+  // 修改记录：两个人的改动都能看到，撤销也会同步
+  await A.locator('#menuBtn').click();
+  await A.locator('#historyBtn').click();
+  await A.waitForTimeout(300);
+  const who = await A.locator('.history-item .history-meta').allTextContents();
+  ok(who.some(t => t.includes('小红')), 'A 的记录里看得到小红的改动');
+  ok(who.some(t => t.includes('我')), 'A 的记录里也有自己的改动');
+
+  const undoRow = A.locator('.history-item').filter({ hasText: '两人同时改的点' }).first();
+  await undoRow.locator('button', { hasText: '撤销' }).click();
+  const t10 = await waitFor(async () => {
+    const names = await B.locator('.stop-name').allTextContents();
+    return !names.some(n => n.includes('两人同时改的点')) && names.some(n => n.includes(targetName));
+  });
+  ok(t10 >= 0, 'A 点撤销，B 端跟着回退（' + t10 + 'ms）');
+  await A.locator('#historyClose').click();
+
   await browser.close();
   console.log(fails ? '\n有 ' + fails + ' 项失败' : '\n协作全部通过 ✅');
   process.exit(fails ? 1 : 0);

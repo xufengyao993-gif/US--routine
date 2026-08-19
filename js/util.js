@@ -96,6 +96,19 @@
     return node;
   }
 
+  /** 时间戳 -> 「刚刚 / 3 分钟前 / 2 小时前 / 昨天 14:30」 */
+  function relTime(ts) {
+    if (!ts) return '';
+    const diff = Date.now() - ts;
+    if (diff < 60 * 1000) return '刚刚';
+    if (diff < 60 * 60 * 1000) return Math.floor(diff / 60000) + ' 分钟前';
+    if (diff < 24 * 60 * 60 * 1000) return Math.floor(diff / 3600000) + ' 小时前';
+    const d = new Date(ts);
+    const hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    if (diff < 48 * 60 * 60 * 1000) return '昨天 ' + hm;
+    return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hm;
+  }
+
   /** 头像上的字：中文名取末字（小明/小红 -> 明/红），英文名取首字母 */
   function initials(name) {
     const n = String(name || '?').replace(/（.*?）|\(.*?\)/g, '').trim();
@@ -127,6 +140,7 @@
     estimateLeg: estimateLeg,
     el: el,
     initials: initials,
+    relTime: relTime,
     uid: uid,
     formatDate: formatDate
   };

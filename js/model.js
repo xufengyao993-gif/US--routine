@@ -66,6 +66,43 @@
     return patch;
   }
 
+  /* ---------- 按路径读写（撤销功能要靠它拿「改之前的值」） ---------- */
+  /** 读 'days/d1/stops/s3/stayMin' 这样的路径，返回深拷贝（避免后续改动串了引用） */
+  function getAtPath(root, path) {
+    const parts = String(path).split('/').filter(Boolean);
+    let node = root;
+    for (let i = 0; i < parts.length; i++) {
+      if (node == null || typeof node !== 'object') return null;
+      node = node[parts[i]];
+    }
+    if (node === undefined) return null;
+    return node && typeof node === 'object' ? JSON.parse(JSON.stringify(node)) : node;
+  }
+
+  /** 写同样的路径；值为 null 表示删除这个节点 */
+  function setAtPath(root, path, value) {
+    const parts = String(path).split('/').filter(Boolean);
+    if (!parts.length) return;
+    let node = root;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const k = parts[i];
+      if (node[k] == null || typeof node[k] !== 'object') node[k] = {};
+      node = node[k];
+    }
+    const last = parts[parts.length - 1];
+    if (value === null || value === undefined) delete node[last];
+    else node[last] = value;
+  }
+
+  /** 给一批改动生成「反操作」：把每条路径改之前的值记下来 */
+  function inverseOf(root, patch) {
+    const inverse = {};
+    Object.keys(patch).forEach(function (path) {
+      inverse[path] = getAtPath(root, path);
+    });
+    return inverse;
+  }
+
   /* ---------- v1（数组）-> v2（键值表）迁移 ---------- */
   function migrate(trip) {
     if (!trip) return null;
@@ -135,6 +172,9 @@
     nextOrder: nextOrder,
     orderForMove: orderForMove,
     reindex: reindex,
+    getAtPath: getAtPath,
+    setAtPath: setAtPath,
+    inverseOf: inverseOf,
     migrate: migrate,
     toPlain: toPlain,
     newTripId: newTripId

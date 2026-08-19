@@ -18,6 +18,7 @@
     activeStopId: null,
     schedule: null,
     presence: [],
+    history: [],
     claimed: false,
     pendingRender: false
   };
@@ -29,6 +30,7 @@
     const cfg = Config.load();
     state.tripId = resolveTripId();
     state.trip = S.loadTrip(state.tripId) || S.sampleTrip();
+    state.history = S.loadHistory(state.tripId);
     ensureActiveDay();
 
     bindControls();
@@ -42,6 +44,7 @@
       tripId: state.tripId,
       onTrip: onRemoteTrip,
       onPresence: onPresence,
+      onHistory: onRemoteHistory,
       onStatus: onSyncStatus
     });
 
@@ -122,14 +125,184 @@
     renderPresence();
   }
 
-  /* ================= 写入（本地优先 + 推补丁） ================= */
-  function commit(patch) {
+  /* ================= 写入（本地优先 + 推补丁 + 记一笔） =================
+   * 所有改动都走这里：
+   *   1. 先算出「反操作」（这些路径改之前是什么），撤销就靠它
+   *   2. 应用到本地并立刻重绘
+   *   3. 把补丁推给同伴
+   *   4. 记一条修改记录，谁改的、改了什么、怎么撤
+   */
+  function change(patch, meta) {
+    if (!patch || !Object.keys(patch).length) return;
+    const inverse = Model.inverseOf(state.trip, patch);
+    Object.keys(patch).forEach(function (path) {
+      Model.setAtPath(state.trip, path, patch[path]);
+    });
     S.saveTrip(state.trip, state.tripId);
-    if (patch && Object.keys(patch).length) Sync.push(patch);
+    Sync.push(patch);
+    if (!meta || !meta.silent) recordHistory(patch, inverse, meta || {});
+  }
+
+  /** 整份行程替换（导入 / 载入示例 / 撤销这两件事） */
+  function replaceTrip(next, meta) {
+    const before = JSON.parse(JSON.stringify(state.trip));
+    state.trip = Model.migrate(next);
+    state.activeDayId = null;
+    state.activeStopId = null;
+    ensureActiveDay();
+    S.saveTrip(state.trip, state.tripId);
+    Sync.replaceAll(state.trip);
+    recordHistory(null, null, Object.assign({ root: { before: before } }, meta || {}));
+    render();
+    if (M.isReady()) refreshLegs(true);
   }
 
   function dayPath(dayId) { return 'days/' + dayId; }
   function stopPath(dayId, stopId) { return 'days/' + dayId + '/stops/' + stopId; }
+
+  /* ================= 修改记录与撤销 ================= */
+  const HISTORY_KEEP = 60;      // 本地和云端各保留多少条
+
+  function recordHistory(patch, inverse, meta) {
+    const me = Sync.getMe();
+    const entry = {
+      id: U.uid('h'),
+      ts: Date.now(),
+      who: me ? me.name : '我',
+      byMe: true,
+      color: me ? me.color : '#64748b',
+      action: meta.action || 'edit',
+      summary: meta.summary || '改动了行程',
+      patch: patch || null,
+      inverse: inverse || null,
+      root: meta.root || null,
+      undoOf: meta.undoOf || null
+    };
+    state.history.push(entry);
+    trimAndSaveHistory();
+    Sync.pushHistory(Object.assign({}, entry, { byMe: null }));
+    renderHistoryIfOpen();
+  }
+
+  function onRemoteHistory(list) {
+    // 云端是准的；本人写的那几条补上 byMe 标记，方便「只看我的」和快捷键撤销
+    const mine = {};
+    state.history.forEach(function (e) { if (e.byMe) mine[e.id] = true; });
+    state.history = list.map(function (e) {
+      return Object.assign({}, e, { byMe: !!mine[e.id] });
+    });
+    trimAndSaveHistory();
+    renderHistoryIfOpen();
+
+    // 谁的记录多到该清了，就顺手清一下最老的
+    if (Sync.isOnline() && list.length > HISTORY_KEEP * 2) {
+      const sorted = list.slice().sort(function (a, b) { return (a.ts || 0) - (b.ts || 0); });
+      Sync.trimHistory(sorted.slice(0, list.length - HISTORY_KEEP).map(function (e) { return e.id; }));
+    }
+  }
+
+  function trimAndSaveHistory() {
+    state.history.sort(function (a, b) { return (a.ts || 0) - (b.ts || 0); });
+    if (state.history.length > HISTORY_KEEP) {
+      state.history = state.history.slice(state.history.length - HISTORY_KEEP);
+    }
+    S.saveHistory(state.tripId, state.history);
+  }
+
+  /** 记录倒序（最新在前） */
+  function historyDesc() {
+    return state.history.slice().reverse();
+  }
+
+  /** 这条记录还能不能撤：父节点被别人删掉之后就撤不了了 */
+  function undoBlockReason(entry) {
+    if (entry.undone) return '已经撤销过了';
+    if (entry.root) return null;
+    if (!entry.inverse || !Object.keys(entry.inverse).length) return '这条记录没有可撤销的内容';
+    const bad = Object.keys(entry.inverse).filter(function (path) {
+      if (entry.inverse[path] === null) return false;       // 撤销后是删除，父节点在不在都无所谓
+      const parts = path.split('/').filter(Boolean);
+      if (parts.length < 2) return false;
+      const parent = parts.slice(0, -1).join('/');
+      return Model.getAtPath(state.trip, parent) == null;
+    });
+    return bad.length ? '它所在的地点或那一天已经被删掉了' : null;
+  }
+
+  function undoEntry(entry) {
+    const reason = undoBlockReason(entry);
+    if (reason) { toast('撤销不了：' + reason); return; }
+
+    if (entry.root) {
+      replaceTrip(entry.root.before, { action: 'undo', summary: '撤销了：' + entry.summary, undoOf: entry.id });
+    } else {
+      change(entry.inverse, { action: 'undo', summary: '撤销了：' + entry.summary, undoOf: entry.id });
+      render();
+      if (M.isReady()) refreshLegs(true);
+    }
+
+    // 把原记录标成已撤销
+    const target = state.history.filter(function (e) { return e.id === entry.id; })[0];
+    if (target) {
+      target.undone = true;
+      trimAndSaveHistory();
+      Sync.pushHistory(Object.assign({}, target, { byMe: null }));
+    }
+    renderHistoryIfOpen();
+    toast('已撤销：' + entry.summary);
+  }
+
+  /** 快捷键撤销：只撤自己最近那条还没撤过的 */
+  function undoMyLast() {
+    const mine = historyDesc().filter(function (e) {
+      return e.byMe && !e.undone && e.action !== 'undo' && !undoBlockReason(e);
+    });
+    if (!mine.length) { toast('没有可撤销的改动'); return; }
+    undoEntry(mine[0]);
+  }
+
+  function openHistory() {
+    renderHistory();
+    $('historyDialog').showModal();
+  }
+
+  function renderHistoryIfOpen() {
+    if ($('historyDialog').open) renderHistory();
+  }
+
+  let historyFilterMine = false;
+
+  function renderHistory() {
+    const list = $('historyList');
+    list.innerHTML = '';
+    const entries = historyDesc().filter(function (e) { return !historyFilterMine || e.byMe; });
+
+    $('historyMineBtn').classList.toggle('is-on', historyFilterMine);
+    $('historyCount').textContent = Sync.getMode() === 'local'
+      ? '（本机记录，未连协作服务）' : '（大家的改动都在这里）';
+
+    if (!entries.length) {
+      list.appendChild(U.el('div', { class: 'empty', text: '还没有改动记录' }));
+      return;
+    }
+
+    entries.forEach(function (e) {
+      const reason = undoBlockReason(e);
+      list.appendChild(U.el('div', { class: 'history-item' + (e.undone ? ' is-undone' : '') }, [
+        U.el('span', { class: 'avatar', style: 'background:' + (e.color || '#64748b'), text: U.initials(e.who) }),
+        U.el('div', { class: 'history-body' }, [
+          U.el('div', { class: 'history-summary', text: e.summary }),
+          U.el('div', { class: 'history-meta', text: (e.byMe ? '我' : e.who) + ' · ' + U.relTime(e.ts) + (e.undone ? ' · 已撤销' : '') })
+        ]),
+        e.action === 'undo' || e.undone ? null : U.el('button', {
+          class: 'link-btn ghost' + (reason ? ' is-disabled' : ''),
+          title: reason || '把这条改动还原',
+          text: '撤销',
+          onclick: function () { undoEntry(e); }
+        })
+      ]));
+    });
+  }
 
   /* ================= 渲染 ================= */
   function ensureActiveDay() {
@@ -250,9 +423,8 @@
       U.el('input', {
         class: 'day-title', value: day.title, placeholder: '这一天叫什么',
         onchange: function (e) {
-          day.title = e.target.value;
-          const p = {}; p[dayPath(day.id) + '/title'] = day.title;
-          commit(p);
+          const p = {}; p[dayPath(day.id) + '/title'] = e.target.value;
+          change(p, { action: 'day', summary: '把这一天改名为「' + e.target.value + '」' });
           renderDayTabs();
         }
       }),
@@ -265,9 +437,8 @@
         U.el('input', {
           type: 'date', value: day.date,
           onchange: function (e) {
-            day.date = e.target.value;
-            const p = {}; p[dayPath(day.id) + '/date'] = day.date;
-            commit(p);
+            const p = {}; p[dayPath(day.id) + '/date'] = e.target.value;
+            change(p, { action: 'day', summary: '把「' + day.title + '」的日期改成 ' + e.target.value });
             renderDayTabs();
           }
         })
@@ -277,9 +448,8 @@
         U.el('input', {
           type: 'time', value: day.startTime,
           onchange: function (e) {
-            day.startTime = e.target.value || '09:00';
-            const p = {}; p[dayPath(day.id) + '/startTime'] = day.startTime;
-            commit(p);
+            const p = {}; p[dayPath(day.id) + '/startTime'] = e.target.value || '09:00';
+            change(p, { action: 'day', summary: '把「' + day.title + '」的出发时间改成 ' + (e.target.value || '09:00') });
             render();
           }
         })
@@ -398,7 +568,10 @@
         }
       }
     }, [
-      U.el('div', { class: 'stop-num', text: String(i + 1) }),
+      U.el('div', { class: 'stop-grip' }, [
+        U.el('div', { class: 'stop-num', text: String(i + 1) }),
+        U.el('div', { class: 'drag-handle', title: '按住拖动排序', text: '⠿' })
+      ]),
       U.el('div', { class: 'stop-body' }, [
         U.el('div', { class: 'stop-head' }, [
           U.el('span', { class: 'stop-name', text: cat.icon + ' ' + stop.name }),
@@ -437,10 +610,9 @@
       nd.setDate(nd.getDate() + 1);
       day.date = nd.toISOString().slice(0, 10);
     }
-    state.trip.days[day.id] = day;
     state.activeDayId = day.id;
     const p = {}; p[dayPath(day.id)] = day;
-    commit(p);
+    change(p, { action: 'day-add', summary: '新增了一天：' + day.title });
     render();
   }
 
@@ -448,47 +620,46 @@
     const day = currentDay();
     if (!day) return;
     if (!confirm('删除「' + day.title + '」这一天的全部行程？同伴那边也会删掉。')) return;
-    delete state.trip.days[day.id];
     const p = {}; p[dayPath(day.id)] = null;
-    commit(p);
+    change(p, { action: 'day-delete', summary: '删掉了一天：' + day.title });
     state.activeDayId = null;
     ensureActiveDay();
     render();
   }
 
   function moveStop(day, index, delta) {
+    moveStopTo(day, index, index + delta);
+  }
+
+  /** 把第 from 个地点挪到第 to 位（↑↓ 按钮和拖拽都走这里） */
+  function moveStopTo(day, from, to) {
     const stops = Model.stopList(day);
-    const target = index + delta;
-    if (target < 0 || target >= stops.length) return;
-    const moving = stops[index];
-    let order = Model.orderForMove(stops, index, target);
+    if (from === to || to < 0 || to >= stops.length) return;
+    const moving = stops[from];
+    const order = Model.orderForMove(stops, from, to);
     const patch = {};
 
     if (order == null) {
       // order 精度用尽，整天重排一次
       const reordered = stops.slice();
-      reordered.splice(index, 1);
-      reordered.splice(target, 0, moving);
+      reordered.splice(from, 1);
+      reordered.splice(to, 0, moving);
       reordered.forEach(function (s, i) {
-        const o = (i + 1) * Model.ORDER_STEP;
-        day.stops[s.id].order = o;
-        patch[stopPath(day.id, s.id) + '/order'] = o;
+        patch[stopPath(day.id, s.id) + '/order'] = (i + 1) * Model.ORDER_STEP;
       });
     } else {
-      day.stops[moving.id].order = order;
       patch[stopPath(day.id, moving.id) + '/order'] = order;
     }
 
-    commit(patch);
+    change(patch, { action: 'stop-move', summary: '把「' + moving.name + '」挪到第 ' + (to + 1) + ' 位' });
     render();
     if (M.isReady()) refreshLegs(true);
   }
 
   function removeStop(day, stop) {
     if (!confirm('删除「' + stop.name + '」？')) return;
-    delete day.stops[stop.id];
     const p = {}; p[stopPath(day.id, stop.id)] = null;
-    commit(p);
+    change(p, { action: 'stop-delete', summary: '删掉了「' + stop.name + '」' });
     render();
     if (M.isReady()) refreshLegs(true);
   }
@@ -496,9 +667,8 @@
   function cycleMode(day, stop) {
     const order = ['DRIVING', 'TRANSIT', 'WALKING', 'BICYCLING'];
     const next = order[(order.indexOf(stop.arriveMode || 'DRIVING') + 1) % order.length];
-    day.stops[stop.id].arriveMode = next;
     const p = {}; p[stopPath(day.id, stop.id) + '/arriveMode'] = next;
-    commit(p);
+    change(p, { action: 'stop-edit', summary: '去「' + stop.name + '」改成' + U.MODES[next].label });
     render();
     if (M.isReady()) refreshLegs(true);
   }
@@ -536,7 +706,11 @@
   }
 
   function openStopDialog(day, stop) {
-    editing = stop ? { dayId: day.id, stopId: stop.id } : { dayId: day.id, stopId: null };
+    editing = stop
+      // 存一份打开那一刻的快照：保存时只写「你在表单里真正动过的字段」，
+      // 这样同伴在你打开弹窗期间改的别的字段不会被你手里的旧值冲掉
+      ? { dayId: day.id, stopId: stop.id, snapshot: JSON.parse(JSON.stringify(stop)) }
+      : { dayId: day.id, stopId: null, snapshot: null };
     const s = stop || S.newStop();
     $('stopDialogTitle').textContent = stop ? '编辑地点' : '添加地点';
     $('f-search').value = '';
@@ -582,26 +756,53 @@
     };
 
     const patch = {};
+    let meta;
     if (editing.stopId && day.stops[editing.stopId]) {
-      const stop = Object.assign(day.stops[editing.stopId], data);
-      patch[stopPath(day.id, stop.id)] = stop;
+      // 只写真正改动的字段：撤销时能精确还原，两个人同时改同一个地点的不同字段也不会互相覆盖。
+      // 比较的基准是「打开弹窗那一刻」的快照，不是当前值——否则同伴刚改的字段会被表单里的旧值覆盖回去。
+      const existing = day.stops[editing.stopId];
+      const base = editing.snapshot || existing;
+      const same = function (a, b) { return JSON.stringify(a == null ? null : a) === JSON.stringify(b == null ? null : b); };
+      const changed = Object.keys(data).filter(function (k) {
+        return k !== 'updatedAt' && k !== 'updatedBy' && !same(base[k], data[k]);
+      });
+      if (!changed.length) { render(); return; }          // 什么都没改，不留记录
+      changed.concat(['updatedAt', 'updatedBy']).forEach(function (k) {
+        patch[stopPath(day.id, existing.id) + '/' + k] = data[k];
+      });
+      meta = { action: 'stop-edit', summary: describeEdit(base, Object.assign({}, base, data)) };
     } else {
       const stop = S.newStop(data, Model.nextOrder(day.stops));
-      day.stops[stop.id] = stop;
       patch[stopPath(day.id, stop.id)] = stop;
+      meta = { action: 'stop-add', summary: '加了新地点「' + stop.name + '」' };
     }
 
     closeStopDialog();
-    commit(patch);
+    change(patch, meta);
     render();
     if (M.isReady()) refreshLegs(true);
+  }
+
+  /** 对比新旧地点，说人话地描述改了什么 */
+  function describeEdit(before, after) {
+    const parts = [];
+    if (before.name !== after.name) parts.push('改名为「' + after.name + '」');
+    if ((before.stayMin || 0) !== (after.stayMin || 0)) parts.push('停留改成 ' + U.toDuration(after.stayMin));
+    if ((before.arriveMode || '') !== (after.arriveMode || '')) parts.push('改成' + (U.MODES[after.arriveMode] || {}).label + '过去');
+    if ((before.fixedStart || '') !== (after.fixedStart || '')) {
+      parts.push(after.fixedStart ? '固定时间设为 ' + after.fixedStart : '取消了固定时间');
+    }
+    if ((before.category || '') !== (after.category || '')) parts.push('类型改成' + (U.CATEGORIES[after.category] || {}).label);
+    if ((before.notes || '') !== (after.notes || '')) parts.push('改了备注');
+    if ((before.lat !== after.lat) || (before.lng !== after.lng)) parts.push('换了位置');
+    if (!parts.length) return '编辑了「' + before.name + '」';
+    return '「' + before.name + '」' + parts.join('、');
   }
 
   /* ================= 顶部操作 ================= */
   function bindControls() {
     $('tripTitle').addEventListener('change', function (e) {
-      state.trip.title = e.target.value;
-      commit({ title: state.trip.title });
+      change({ title: e.target.value }, { action: 'title', summary: '把行程改名为「' + e.target.value + '」' });
     });
 
     $('addStopBtn').addEventListener('click', function () {
@@ -623,6 +824,36 @@
     document.addEventListener('click', function () { menu.hidden = true; });
     menu.addEventListener('click', function () { menu.hidden = true; });
 
+    $('historyBtn').addEventListener('click', openHistory);
+    $('historyClose').addEventListener('click', function () { $('historyDialog').close(); });
+    $('historyMineBtn').addEventListener('click', function () {
+      historyFilterMine = !historyFilterMine;
+      renderHistory();
+    });
+    $('undoBtn').addEventListener('click', undoMyLast);
+
+    // Ctrl/Cmd + Z 撤销自己最近一次改动
+    document.addEventListener('keydown', function (e) {
+      const key = (e.key || '').toLowerCase();
+      if ((e.metaKey || e.ctrlKey) && key === 'z' && !e.shiftKey) {
+        const ae = document.activeElement;
+        if (ae && /^(INPUT|TEXTAREA)$/.test(ae.tagName)) return;   // 输入框里让浏览器自己撤销文字
+        e.preventDefault();
+        undoMyLast();
+      }
+    });
+
+    // 拖拽排序（手机长按手柄拖动，桌面鼠标拖动）
+    global.DragSort.attach({
+      container: $('timeline'),
+      itemSelector: '.stop',
+      handleSelector: '.drag-handle',
+      onDrop: function (from, to) {
+        const day = currentDay();
+        if (day) moveStopTo(day, from, to);
+      }
+    });
+
     $('refreshBtn').addEventListener('click', function () {
       if (!M.isReady()) { toast('需要先填 Google Maps API Key'); return; }
       refreshLegs(false);
@@ -631,13 +862,8 @@
     $('exportBtn').addEventListener('click', exportTrip);
     $('importInput').addEventListener('change', importTrip);
     $('sampleBtn').addEventListener('click', function () {
-      if (!confirm('用示例行程覆盖当前行程？同伴那边也会一起变。')) return;
-      state.trip = S.sampleTrip();
-      state.activeDayId = null;
-      ensureActiveDay();
-      S.saveTrip(state.trip, state.tripId);
-      Sync.replaceAll(state.trip);
-      render();
+      if (!confirm('用示例行程覆盖当前行程？同伴那边也会一起变（可以在修改记录里撤销）。')) return;
+      replaceTrip(S.sampleTrip(), { action: 'replace', summary: '载入了示例行程' });
     });
     $('newTripBtn').addEventListener('click', function () {
       if (!confirm('新建一个空行程？当前这份还留在原来的链接里，随时能回去。')) return;
@@ -797,15 +1023,8 @@
       try {
         const parsed = JSON.parse(reader.result);
         if (!parsed || !parsed.days) throw new Error('格式不对，缺少 days');
-        state.trip = Model.migrate(parsed);
-        state.activeDayId = null;
-        state.activeStopId = null;
-        ensureActiveDay();
-        S.saveTrip(state.trip, state.tripId);
-        Sync.replaceAll(state.trip);
-        render();
-        if (M.isReady()) refreshLegs(true);
-        toast('已导入');
+        replaceTrip(parsed, { action: 'replace', summary: '导入了行程文件「' + file.name + '」' });
+        toast('已导入（可在修改记录里撤销）');
       } catch (err) {
         alert('导入失败：' + err.message);
       }

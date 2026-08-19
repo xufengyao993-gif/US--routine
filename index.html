@@ -19,6 +19,7 @@
     <input id="tripTitle" class="trip-title" placeholder="行程名称" />
 
     <div id="presence" class="presence"></div>
+    <button id="undoBtn" class="tool-btn" title="撤销我最近一次改动（Ctrl/⌘ + Z）">↩️</button>
     <button id="shareBtn" class="tool-btn accent">👥 邀请</button>
 
     <div class="menu-wrap">
@@ -26,6 +27,7 @@
       <div id="menu" class="menu" hidden>
         <button id="refreshBtn" class="menu-item">🔄 刷新路程时间</button>
         <button id="copyBtn" class="menu-item">📋 复制当天行程</button>
+        <button id="historyBtn" class="menu-item">🕘 修改记录 / 撤销</button>
         <button id="exportBtn" class="menu-item">⬇️ 导出 JSON</button>
         <label class="menu-item" for="importInput">⬆️ 导入 JSON</label>
         <button id="sampleBtn" class="menu-item">✨ 载入示例行程</button>
@@ -105,7 +107,7 @@
       <div class="field-row">
         <label class="field">
           <span>停留（分钟）</span>
-          <input id="f-stay" type="number" min="0" step="5" />
+          <input id="f-stay" type="number" min="0" step="1" inputmode="numeric" />
         </label>
         <label class="field">
           <span>怎么过来</span>
@@ -154,6 +156,20 @@
     </div>
   </dialog>
 
+  <!-- 修改记录 -->
+  <dialog id="historyDialog" class="dialog">
+    <div class="dialog-form">
+      <div class="history-head">
+        <h2>修改记录 <span id="historyCount" class="history-count"></span></h2>
+        <button id="historyMineBtn" class="tool-btn">只看我的</button>
+      </div>
+      <div id="historyList" class="history-list"></div>
+      <div class="dialog-actions">
+        <button type="button" id="historyClose" class="tool-btn">关闭</button>
+      </div>
+    </div>
+  </dialog>
+
   <!-- 设置 -->
   <dialog id="settingsDialog" class="dialog">
     <form id="settingsForm" method="dialog" class="dialog-form">
@@ -193,6 +209,7 @@
   <script src="js/schedule.js"></script>
   <script src="js/maps.js"></script>
   <script src="js/sync.js"></script>
+  <script src="js/dragsort.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

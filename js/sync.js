@@ -140,6 +140,15 @@
           setMode('error');
         });
 
+        // 修改记录
+        dbMod.onValue(dbMod.child(root, 'history'), function (snap) {
+          const val = snap.val() || {};
+          const list = Object.keys(val).map(function (k) {
+            return Object.assign({ id: k }, val[k]);
+          });
+          if (handlers.onHistory) handlers.onHistory(list);
+        }, noop);
+
         // 在线成员
         dbMod.onValue(dbMod.child(root, 'presence'), function (snap) {
           const val = snap.val() || {};
@@ -209,8 +218,28 @@
       });
   }
 
+  /** 写一条修改记录（大家都能看到、都能撤销） */
+  function pushHistory(entry) {
+    if (!fb || !tripId) return Promise.resolve(false);
+    return fb.set(fb.ref(fb.db, 'trips/' + tripId + '/history/' + entry.id), clean(entry))
+      .then(function () { return true; })
+      .catch(function (err) { console.warn('写修改记录失败', err); return false; });
+  }
+
+  /** 清掉过老的记录，避免无限增长 */
+  function trimHistory(ids) {
+    if (!fb || !tripId || !ids.length) return Promise.resolve(false);
+    const patch = {};
+    ids.forEach(function (id) { patch[id] = null; });
+    return fb.update(fb.ref(fb.db, 'trips/' + tripId + '/history'), patch)
+      .then(function () { return true; })
+      .catch(function () { return false; });
+  }
+
   global.Sync = {
     init: init,
+    pushHistory: pushHistory,
+    trimHistory: trimHistory,
     push: push,
     replaceAll: replaceAll,
     setEditing: setEditing,

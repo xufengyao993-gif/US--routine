@@ -66,7 +66,37 @@ const r3 = Schedule.computeDay({startTime:'09:00', stops:[
 ]}, () => ({minutes:20, km:8}));
 ok(r3.items[1].waitMin === 160 && r3.items[1].startAt === 720, '早到产生空档');
 
-/* --- 5. 导出结构 --- */
+/* --- 5. 撤销：反操作补丁 --- */
+const t5 = Model.migrate(JSON.parse(JSON.stringify(SampleTrip)));
+const d5 = Model.dayList(t5)[0];
+const s5 = Model.stopList(d5)[1];
+const p5 = 'days/' + d5.id + '/stops/' + s5.id;
+
+// 改一个字段
+const editPatch = {}; editPatch[p5 + '/stayMin'] = 15;
+const editInv = Model.inverseOf(t5, editPatch);
+ok(editInv[p5 + '/stayMin'] === s5.stayMin, '反操作记下了改之前的值');
+Object.keys(editPatch).forEach(k => Model.setAtPath(t5, k, editPatch[k]));
+ok(Model.getAtPath(t5, p5 + '/stayMin') === 15, '补丁生效');
+Object.keys(editInv).forEach(k => Model.setAtPath(t5, k, editInv[k]));
+ok(Model.getAtPath(t5, p5 + '/stayMin') === s5.stayMin, '撤销后还原');
+
+// 删一个地点再撤销，整条数据要回来
+const delPatch = {}; delPatch[p5] = null;
+const delInv = Model.inverseOf(t5, delPatch);
+Object.keys(delPatch).forEach(k => Model.setAtPath(t5, k, delPatch[k]));
+ok(Model.getAtPath(t5, p5) === null, '地点已删除');
+ok(Model.stopList(Model.dayList(t5)[0]).length === 9, '删除后少一个');
+Object.keys(delInv).forEach(k => Model.setAtPath(t5, k, delInv[k]));
+ok(Model.getAtPath(t5, p5 + '/name') === s5.name, '撤销删除后整条数据回来了');
+ok(Model.stopList(Model.dayList(t5)[0])[1].id === s5.id, '而且回到原来的位置');
+
+// 深拷贝：拿到的旧值不能和现存对象共用引用
+const snap = Model.getAtPath(t5, p5);
+Model.setAtPath(t5, p5 + '/name', '改过了');
+ok(snap.name === s5.name, '取出的旧值是深拷贝，不会被后续改动带走');
+
+/* --- 6. 导出结构 --- */
 const plain = Model.toPlain(v2);
 ok(Array.isArray(plain.days) && Array.isArray(plain.days[0].stops), '导出回数组结构');
 ok(plain.days[0].stops[0].name === d1[0].name, '导出顺序正确');
