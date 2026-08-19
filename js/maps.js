@@ -171,6 +171,14 @@
     }
   }
 
+  /** 容器尺寸变了（比如手机上从「行程」切到「地图」）之后重新量一次 */
+  function resize() {
+    if (!isReady()) return;
+    const center = map.getCenter();
+    google.maps.event.trigger(map, 'resize');
+    if (center) map.setCenter(center);
+  }
+
   function focusStop(stop) {
     if (!isReady() || stop.lat == null) return;
     map.panTo({ lat: Number(stop.lat), lng: Number(stop.lng) });
@@ -179,11 +187,12 @@
 
   /**
    * 逐段向 Directions API 请求真实耗时与路线，写入缓存。
+   * @param {Array} stops 已按行程顺序排好的地点数组
    * @returns {Promise<number>} 新抓到的段数
    */
-  function fetchLegs(day, onProgress) {
+  function fetchLegs(stops, onProgress) {
     if (!isReady() || !directionsService) return Promise.resolve(0);
-    const stops = day.stops || [];
+    stops = stops || [];
     const jobs = [];
     for (let i = 1; i < stops.length; i++) {
       const a = stops[i - 1];
@@ -271,6 +280,7 @@
     isReady: isReady,
     renderDay: renderDay,
     focusStop: focusStop,
+    resize: resize,
     fetchLegs: fetchLegs,
     attachAutocomplete: attachAutocomplete,
     escapeHtml: escapeHtml

@@ -2,27 +2,44 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
   <title>US Routine · 美国行程时间轴</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%97%BA%EF%B8%8F%3C/text%3E%3C/svg%3E" />
+  <meta name="theme-color" content="#2563eb" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="US Routine" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="assets/icon-192.png" />
   <link rel="stylesheet" href="assets/styles.css" />
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">🗺️ US Routine</div>
+    <div class="brand">🗺️</div>
     <input id="tripTitle" class="trip-title" placeholder="行程名称" />
-    <div class="topbar-actions">
-      <button id="refreshBtn" class="tool-btn" title="重新向 Google 查询各段真实路程时间">🔄 刷新路程</button>
-      <button id="copyBtn" class="tool-btn" title="把当天行程复制成文字">📋 复制当天</button>
-      <button id="exportBtn" class="tool-btn">⬇️ 导出</button>
-      <label class="tool-btn" for="importInput">⬆️ 导入</label>
-      <input id="importInput" type="file" accept="application/json" hidden />
-      <button id="resetBtn" class="tool-btn">↩️ 示例</button>
-      <button id="keyBtn" class="tool-btn">🔑 API Key</button>
+
+    <div id="presence" class="presence"></div>
+    <button id="shareBtn" class="tool-btn accent">👥 邀请</button>
+
+    <div class="menu-wrap">
+      <button id="menuBtn" class="tool-btn" aria-haspopup="true" aria-expanded="false">⋯</button>
+      <div id="menu" class="menu" hidden>
+        <button id="refreshBtn" class="menu-item">🔄 刷新路程时间</button>
+        <button id="copyBtn" class="menu-item">📋 复制当天行程</button>
+        <button id="exportBtn" class="menu-item">⬇️ 导出 JSON</button>
+        <label class="menu-item" for="importInput">⬆️ 导入 JSON</label>
+        <button id="sampleBtn" class="menu-item">✨ 载入示例行程</button>
+        <button id="newTripBtn" class="menu-item">🆕 新建一个行程</button>
+        <div class="menu-sep"></div>
+        <button id="settingsBtn" class="menu-item">⚙️ 设置（Key / 昵称）</button>
+      </div>
     </div>
+    <input id="importInput" type="file" accept="application/json" hidden />
   </header>
 
-  <div class="layout">
+  <div id="syncBar" class="sync-bar" hidden></div>
+
+  <div class="layout" id="layout" data-view="list">
     <aside class="panel">
       <div id="dayTabs" class="daytabs"></div>
       <div id="dayMeta" class="daymeta"></div>
@@ -39,13 +56,21 @@
     </main>
   </div>
 
+  <nav class="mobile-tabs">
+    <button class="mobile-tab is-active" data-view="list">📋 行程</button>
+    <button class="mobile-tab" data-view="map">🗺️ 地图</button>
+  </nav>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <!-- 地点编辑 -->
   <dialog id="stopDialog" class="dialog">
     <form id="stopForm" method="dialog" class="dialog-form">
       <h2 id="stopDialogTitle">添加地点</h2>
 
       <label class="field">
         <span>搜索地点</span>
-        <input id="f-search" type="text" placeholder="填了 API Key 后可搜索，自动带回地址和坐标" autocomplete="off" />
+        <input id="f-search" type="text" placeholder="配好 Maps Key 后可搜索，自动带回地址和坐标" autocomplete="off" />
       </label>
 
       <div class="field-row">
@@ -109,29 +134,65 @@
     </form>
   </dialog>
 
-  <dialog id="keyDialog" class="dialog">
-    <form id="keyForm" method="dialog" class="dialog-form">
-      <h2>Google Maps API Key</h2>
-      <p class="dialog-hint">
-        Key 只存在你自己的浏览器里（localStorage），不会上传。需要在 Google Cloud Console 启用
-        <b>Maps JavaScript API</b>、<b>Directions API</b>、<b>Places API</b>。
-      </p>
+  <!-- 邀请朋友 -->
+  <dialog id="shareDialog" class="dialog">
+    <div class="dialog-form">
+      <h2>邀请朋友一起改</h2>
+      <p class="dialog-hint" id="shareHint"></p>
       <label class="field">
-        <span>API Key</span>
+        <span>行程链接</span>
+        <input id="shareLink" type="text" readonly />
+      </label>
+      <div class="share-actions">
+        <button id="shareCopy" class="primary-btn">复制链接</button>
+        <button id="shareSystem" class="tool-btn">分享到…</button>
+      </div>
+      <div id="shareMembers" class="share-members"></div>
+      <div class="dialog-actions">
+        <button type="button" id="shareClose" class="tool-btn">关闭</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- 设置 -->
+  <dialog id="settingsDialog" class="dialog">
+    <form id="settingsForm" method="dialog" class="dialog-form">
+      <h2>设置</h2>
+
+      <label class="field">
+        <span>我的昵称（朋友会看到）</span>
+        <input id="f-nick" type="text" maxlength="12" />
+      </label>
+
+      <label class="field">
+        <span>Google Maps API Key</span>
         <input id="f-key" type="text" placeholder="AIza..." autocomplete="off" />
       </label>
+
+      <label class="field">
+        <span>Firebase 配置（从控制台复制的 firebaseConfig 对象，直接粘贴）</span>
+        <textarea id="f-fb" rows="6" placeholder='{ "apiKey": "...", "authDomain": "...", "databaseURL": "https://xxx.firebasedatabase.app", "projectId": "...", "appId": "..." }'></textarea>
+      </label>
+
+      <p class="dialog-hint" id="configSource"></p>
+
       <div class="dialog-actions">
-        <button type="button" id="keyCancel" class="tool-btn">取消</button>
+        <button type="button" id="settingsClear" class="tool-btn">清除本地配置</button>
+        <button type="button" id="settingsCancel" class="tool-btn">取消</button>
         <button type="submit" class="primary-btn">保存并刷新</button>
       </div>
     </form>
   </dialog>
 
+  <script src="js/app-config.js"></script>
   <script src="js/util.js"></script>
+  <script src="js/model.js"></script>
+  <script src="js/config.js"></script>
   <script src="js/data.js"></script>
   <script src="js/store.js"></script>
   <script src="js/schedule.js"></script>
   <script src="js/maps.js"></script>
+  <script src="js/sync.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

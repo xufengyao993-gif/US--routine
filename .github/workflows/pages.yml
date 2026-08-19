@@ -1,0 +1,78 @@
+# 推代码 -> 自动构建 -> 自动上线 GitHub Pages。
+# 手机上打开的就是最新版（Service Worker 会检测到新版本并自动刷新）。
+#
+# 首次使用前需要做两件事：
+#   1. 仓库 Settings -> Pages -> Build and deployment -> Source 选 "GitHub Actions"
+#   2. 仓库 Settings -> Secrets and variables -> Actions 里加下面这些 Secret（没有就留空，
+#      应用会退化成本地模式，功能仍可用）：
+#        MAPS_API_KEY, FIREBASE_API_KEY, FIREBASE_AUTH_DOMAIN,
+#        FIREBASE_DATABASE_URL, FIREBASE_PROJECT_ID, FIREBASE_APP_ID
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+      - claude/us-trip-itinerary-planner-alg1ty
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 注入运行时配置（来自仓库 Secrets）
+        env:
+          MAPS_API_KEY: ${{ secrets.MAPS_API_KEY }}
+          FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+          FIREBASE_AUTH_DOMAIN: ${{ secrets.FIREBASE_AUTH_DOMAIN }}
+          FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+        run: |
+          node -e '
+            const fs = require("fs");
+            const cfg = {
+              mapsApiKey: process.env.MAPS_API_KEY || "",
+              firebase: {
+                apiKey: process.env.FIREBASE_API_KEY || "",
+                authDomain: process.env.FIREBASE_AUTH_DOMAIN || "",
+                databaseURL: process.env.FIREBASE_DATABASE_URL || "",
+                projectId: process.env.FIREBASE_PROJECT_ID || "",
+                appId: process.env.FIREBASE_APP_ID || ""
+              }
+            };
+            fs.writeFileSync("js/app-config.js", "/* 由 GitHub Actions 部署时生成，勿手改 */\nwindow.APP_CONFIG = " + JSON.stringify(cfg, null, 2) + ";\n");
+            console.log("已注入配置：maps=" + (cfg.mapsApiKey ? "有" : "无") + " firebase=" + (cfg.firebase.apiKey ? "有" : "无"));
+          '
+
+      - name: 打版本号（让 Service Worker 认出新版本）
+        run: |
+          sed -i "s/__BUILD_ID__/${GITHUB_SHA::12}/" sw.js
+          grep -n "VERSION =" sw.js
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

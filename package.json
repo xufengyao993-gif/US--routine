@@ -1,0 +1,15 @@
+{
+  "name": "us-routine",
+  "version": "1.0.0",
+  "private": true,
+  "description": "美国行程时间轴：地图打点连线 + 自动排时间 + 多人实时协作",
+  "scripts": {
+    "start": "python3 -m http.server 8123",
+    "test": "node test/unit.js",
+    "test:browser": "node test/browser.js",
+    "test:collab": "node test/fakedb.js & sleep 1 && node test/collab.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.49.1"
+  }
+}

@@ -1,48 +1,51 @@
-/* 数据存储：行程存在浏览器 localStorage，支持导入 / 导出 JSON。 */
+/* 本地存储：行程缓存、路段耗时缓存、行程 ID */
 (function (global) {
   'use strict';
 
-  const TRIP_KEY = 'us-routine.trip.v1';
-  const KEY_KEY = 'us-routine.gmaps-key';
+  const TRIP_KEY = 'us-routine.trip.v2';
   const LEG_KEY = 'us-routine.leg-cache.v1';
   const U = global.Util;
+  const Model = global.Model;
 
-  function loadTrip() {
-    try {
-      const raw = localStorage.getItem(TRIP_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed && Array.isArray(parsed.days)) return parsed;
-      }
-    } catch (e) {
-      console.warn('读取本地行程失败，回退到示例行程', e);
-    }
-    return JSON.parse(JSON.stringify(global.SampleTrip));
+  /* ---------- 行程 ---------- */
+  /** 每个行程 ID 一份本地缓存，换行程不会串味 */
+  function tripKey(tripId) {
+    return TRIP_KEY + (tripId ? ':' + tripId : '');
   }
 
-  function saveTrip(trip) {
+  function loadTrip(tripId) {
+    const keys = [tripKey(tripId)];
+    if (!tripId) keys.push('us-routine.trip.v1');   // 兼容第一版的旧数据
+    for (let i = 0; i < keys.length; i++) {
+      try {
+        const raw = localStorage.getItem(keys[i]);
+        if (!raw) continue;
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.days) return Model.migrate(parsed);
+      } catch (e) {
+        console.warn('读取本地行程失败', e);
+      }
+    }
+    return null;
+  }
+
+  function saveTrip(trip, tripId) {
     try {
-      localStorage.setItem(TRIP_KEY, JSON.stringify(trip));
+      localStorage.setItem(tripKey(tripId), JSON.stringify(trip));
     } catch (e) {
       console.warn('保存行程失败', e);
     }
   }
 
-  function resetTrip() {
-    localStorage.removeItem(TRIP_KEY);
-    return JSON.parse(JSON.stringify(global.SampleTrip));
+  function sampleTrip() {
+    return Model.migrate(JSON.parse(JSON.stringify(global.SampleTrip)));
   }
 
-  function getApiKey() {
-    return localStorage.getItem(KEY_KEY) || '';
+  function clearTrip(tripId) {
+    localStorage.removeItem(tripKey(tripId));
   }
 
-  function setApiKey(key) {
-    if (key) localStorage.setItem(KEY_KEY, key.trim());
-    else localStorage.removeItem(KEY_KEY);
-  }
-
-  /* ---- 路段耗时缓存：省 Directions API 配额 ---- */
+  /* ---------- 路段耗时缓存（省 Directions 配额） ---------- */
   let legCache = {};
   try {
     legCache = JSON.parse(localStorage.getItem(LEG_KEY) || '{}');
@@ -64,18 +67,14 @@
     legCache[legKey(from, to, mode)] = value;
     try {
       localStorage.setItem(LEG_KEY, JSON.stringify(legCache));
-    } catch (e) { /* 配额满就算了，内存里还在 */ }
+    } catch (e) { /* 配额满就只留在内存 */ }
   }
 
-  function clearLegCache() {
-    legCache = {};
-    localStorage.removeItem(LEG_KEY);
-  }
-
-  /* ---- 行程结构操作 ---- */
-  function newStop(partial) {
+  /* ---------- 新建对象 ---------- */
+  function newStop(partial, order) {
     return Object.assign({
       id: U.uid('stop'),
+      order: order || Model.ORDER_STEP,
       name: '新地点',
       category: 'attraction',
       address: '',
@@ -88,27 +87,26 @@
     }, partial || {});
   }
 
-  function newDay(index) {
+  function newDay(index, order) {
     const base = new Date();
     base.setDate(base.getDate() + (index || 0));
     return {
       id: U.uid('day'),
+      order: order || (((index || 0) + 1) * Model.ORDER_STEP),
       date: base.toISOString().slice(0, 10),
       title: '第 ' + ((index || 0) + 1) + ' 天',
       startTime: '09:00',
-      stops: []
+      stops: {}
     };
   }
 
   global.Store = {
     loadTrip: loadTrip,
     saveTrip: saveTrip,
-    resetTrip: resetTrip,
-    getApiKey: getApiKey,
-    setApiKey: setApiKey,
+    clearTrip: clearTrip,
+    sampleTrip: sampleTrip,
     getLeg: getLeg,
     putLeg: putLeg,
-    clearLegCache: clearLegCache,
     newStop: newStop,
     newDay: newDay
   };

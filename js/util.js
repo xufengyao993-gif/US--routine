@@ -96,6 +96,14 @@
     return node;
   }
 
+  /** 头像上的字：中文名取末字（小明/小红 -> 明/红），英文名取首字母 */
+  function initials(name) {
+    const n = String(name || '?').replace(/（.*?）|\(.*?\)/g, '').trim();
+    if (!n) return '?';
+    if (/[\u4e00-\u9fa5]/.test(n)) return n[n.length - 1];
+    return n[0].toUpperCase();
+  }
+
   function uid(prefix) {
     return (prefix || 'id') + '-' + Math.random().toString(36).slice(2, 9);
   }
@@ -118,6 +126,7 @@
     haversineKm: haversineKm,
     estimateLeg: estimateLeg,
     el: el,
+    initials: initials,
     uid: uid,
     formatDate: formatDate
   };

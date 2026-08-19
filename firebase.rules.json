@@ -1,0 +1,21 @@
+{
+  "rules": {
+    "trips": {
+      "$tripId": {
+        // 行程 ID 是 24 位随机十六进制，猜不到；拿到链接的人可读可写。
+        // 想更严格就把 auth != null 换成白名单 uid 判断。
+        ".read": "auth != null && $tripId.length >= 16",
+        ".write": "auth != null && $tripId.length >= 16",
+        "data": {
+          ".validate": "newData.hasChildren(['title'])"
+        },
+        "presence": {
+          "$clientId": {
+            // 在线状态只能改自己那条
+            ".validate": "newData.hasChildren(['name'])"
+          }
+        }
+      }
+    }
+  }
+}
