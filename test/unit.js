@@ -102,7 +102,46 @@ ok(Array.isArray(plain.days) && Array.isArray(plain.days[0].stops), '导出回�
 ok(plain.days[0].stops[0].name === d1[0].name, '导出顺序正确');
 ok(Model.newTripId().length === 24, '行程 ID 24 位');
 
-/* --- 7. Firebase 配置解析：控制台原样复制的各种形态都要吃下去 --- */
+/* --- 7. 日期：本地时区，不能被 toISOString 带歪 --- */
+ok(Util.addDays('2026-09-12', 1) === '2026-09-13', '加一天：' + Util.addDays('2026-09-12', 1));
+ok(Util.addDays('2026-09-30', 1) === '2026-10-01', '跨月');
+ok(Util.addDays('2026-12-31', 1) === '2027-01-01', '跨年');
+ok(Util.addDays('2026-03-01', -1) === '2026-02-28', '往回一天');
+ok(Util.addDays('2026-09-12', 0) === '2026-09-12', '加 0 天不变');
+ok(/^\d{4}-\d{2}-\d{2}$/.test(Util.addDays(null, 0)), '空值时以今天为准');
+// 夏令时切换当天（美国 2026-03-08 凌晨 2 点跳到 3 点）也要老实 +1
+ok(Util.addDays('2026-03-07', 1) === '2026-03-08', '夏令时切换前一天');
+ok(Util.addDays('2026-03-08', 1) === '2026-03-09', '夏令时切换当天');
+
+/* --- 8. 按固定时间重排 --- */
+const mk = (name, fixed) => ({ id: name, name: name, fixedStart: fixed || '' });
+
+// 顺序颠倒：晚饭排在了午饭前面
+let list = [mk('酒店'), mk('晚饭', '18:30'), mk('午饭', '12:00'), mk('景点')];
+ok(Model.fixedOutOfOrder(list) === 1, '检测出 1 处顺序颠倒');
+let sorted = Model.sortByFixedTime(list).map(s => s.name);
+ok(sorted.join() === '酒店,午饭,景点,晚饭', '重排后：' + sorted.join(' → '));
+
+// 没固定时间的地点跟着它前面那个固定时间点一起搬
+list = [mk('酒店'), mk('晚饭', '18:30'), mk('夜景'), mk('午饭', '12:00'), mk('博物馆')];
+sorted = Model.sortByFixedTime(list).map(s => s.name);
+ok(sorted.join() === '酒店,午饭,博物馆,晚饭,夜景', '跟随关系保持：' + sorted.join(' → '));
+
+// 本来就是对的，不该动
+list = [mk('酒店'), mk('午饭', '12:00'), mk('景点'), mk('晚饭', '18:30')];
+ok(Model.fixedOutOfOrder(list) === 0, '顺序正确时不报颠倒');
+ok(Model.sortByFixedTime(list).map(s => s.name).join() === '酒店,午饭,景点,晚饭', '顺序正确时保持不变');
+
+// 一个固定时间都没有 -> 原样返回
+list = [mk('A'), mk('B'), mk('C')];
+ok(Model.sortByFixedTime(list).map(s => s.name).join() === 'A,B,C', '没有固定时间时原样返回');
+ok(Model.fixedOutOfOrder([]) === 0 && Model.sortByFixedTime([]).length === 0, '空列表不炸');
+
+// 相同时间保持原有先后（稳定）
+list = [mk('后加的', '12:00'), mk('先加的', '12:00')];
+ok(Model.sortByFixedTime(list).map(s => s.name).join() === '后加的,先加的', '同一时间保持原有先后');
+
+/* --- 9. Firebase 配置解析：控制台原样复制的各种形态都要吃下去 --- */
 const P = global.Config.parseFirebase;
 const want = (o, note) => ok(o && o.apiKey === 'AIzaSyTEST' && o.databaseURL === 'https://x-default-rtdb.firebaseio.com', note);
 

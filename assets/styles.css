@@ -179,6 +179,16 @@ html, body {
   font-size: 12px;
 }
 .warn-bar { background: #fef2f2; color: #b91c1c; }
+.warn-bar-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  background: #fffbeb;
+  color: #b45309;
+}
+.warn-bar-action .link-btn { white-space: nowrap; }
 .info-bar { background: #eff6ff; color: #1d4ed8; }
 
 /* ---------- 时间轴 ---------- */

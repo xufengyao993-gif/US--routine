@@ -109,12 +109,10 @@
   }
 
   function newDay(index, order) {
-    const base = new Date();
-    base.setDate(base.getDate() + (index || 0));
     return {
       id: U.uid('day'),
       order: order || (((index || 0) + 1) * Model.ORDER_STEP),
-      date: base.toISOString().slice(0, 10),
+      date: U.addDays(null, index || 0),
       title: '第 ' + ((index || 0) + 1) + ' 天',
       startTime: '09:00',
       stops: {}

@@ -66,6 +66,49 @@
     return patch;
   }
 
+  /* ---------- 按固定时间排序 ---------- */
+  /**
+   * 按「固定时间」把一天的地点重排。
+   *
+   * 只有填了固定时间的地点才有绝对时刻，没填的那些没有自己的时间——
+   * 它们的时间是被前面的地点推出来的。所以规则是：
+   *   每个「有固定时间」的地点，带着它后面那串「没固定时间」的一起搬家，
+   *   第一个固定时间之前的那些（通常是酒店、早餐）永远留在最前面。
+   * 这样重排之后，你原本安排在某顿饭之后的几个点，还是跟着那顿饭走。
+   */
+  function sortByFixedTime(stops) {
+    const lead = [];
+    const groups = [];
+
+    (stops || []).forEach(function (stop) {
+      const at = U.toMinutes(stop.fixedStart);
+      if (at != null) groups.push({ at: at, anchor: stop, tail: [] });
+      else if (groups.length) groups[groups.length - 1].tail.push(stop);
+      else lead.push(stop);
+    });
+
+    groups.sort(function (a, b) { return a.at - b.at; });
+
+    const out = lead.slice();
+    groups.forEach(function (g) {
+      out.push(g.anchor);
+      g.tail.forEach(function (s) { out.push(s); });
+    });
+    return out;
+  }
+
+  /** 当前顺序里有几处固定时间是倒着的（后面的比前面的早） */
+  function fixedOutOfOrder(stops) {
+    const times = (stops || [])
+      .map(function (s) { return U.toMinutes(s.fixedStart); })
+      .filter(function (t) { return t != null; });
+    let n = 0;
+    for (let i = 1; i < times.length; i++) {
+      if (times[i] < times[i - 1]) n++;
+    }
+    return n;
+  }
+
   /* ---------- 按路径读写（撤销功能要靠它拿「改之前的值」） ---------- */
   /** 读 'days/d1/stops/s3/stayMin' 这样的路径，返回深拷贝（避免后续改动串了引用） */
   function getAtPath(root, path) {
@@ -172,6 +215,8 @@
     nextOrder: nextOrder,
     orderForMove: orderForMove,
     reindex: reindex,
+    sortByFixedTime: sortByFixedTime,
+    fixedOutOfOrder: fixedOutOfOrder,
     getAtPath: getAtPath,
     setAtPath: setAtPath,
     inverseOf: inverseOf,

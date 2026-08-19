@@ -437,8 +437,7 @@
         U.el('input', {
           type: 'date', value: day.date,
           onchange: function (e) {
-            const p = {}; p[dayPath(day.id) + '/date'] = e.target.value;
-            change(p, { action: 'day', summary: '把「' + day.title + '」的日期改成 ' + e.target.value });
+            shiftDates(day, e.target.value);
             renderDayTabs();
           }
         })
@@ -470,6 +469,18 @@
         U.el('span', { class: 'summary-value', text: c[1] })
       ]);
     })));
+
+    const outOfOrder = Model.fixedOutOfOrder(Model.stopList(day));
+    if (outOfOrder > 0) {
+      meta.appendChild(U.el('div', { class: 'warn-bar warn-bar-action' }, [
+        U.el('span', { text: '🕐 有 ' + outOfOrder + ' 处固定时间的先后顺序对不上（后面的比前面的还早）。' }),
+        U.el('button', {
+          class: 'link-btn',
+          text: '⇅ 按时间重排',
+          onclick: function () { sortDayByTime(currentDay(), false); }
+        })
+      ]));
+    }
 
     if (sum.lateCount > 0) {
       meta.appendChild(U.el('div', {
@@ -604,12 +615,9 @@
   function addDay() {
     const days = Model.dayList(state.trip);
     const day = S.newDay(days.length, Model.nextOrder(state.trip.days));
+    // 新的一天默认接在前一天后面
     const prev = days[days.length - 1];
-    if (prev && prev.date) {
-      const nd = new Date(prev.date + 'T00:00:00');
-      nd.setDate(nd.getDate() + 1);
-      day.date = nd.toISOString().slice(0, 10);
-    }
+    if (prev && prev.date) day.date = U.addDays(prev.date, 1);
     state.activeDayId = day.id;
     const p = {}; p[dayPath(day.id)] = day;
     change(p, { action: 'day-add', summary: '新增了一天：' + day.title });
@@ -625,6 +633,66 @@
     state.activeDayId = null;
     ensureActiveDay();
     render();
+  }
+
+  /**
+   * 改某一天的日期。如果后面那些天原本是一天接一天连着的，
+   * 就整体跟着挪同样的天数——整趟行程推迟一天时不用一天天改。
+   */
+  function shiftDates(day, nextDate) {
+    if (!nextDate) return;
+    const days = Model.dayList(state.trip);
+    const idx = days.findIndex(function (d) { return d.id === day.id; });
+    const oldDate = day.date;
+    const patch = {};
+    patch[dayPath(day.id) + '/date'] = nextDate;
+
+    let shifted = 0;
+    if (oldDate) {
+      const delta = Math.round((new Date(nextDate + 'T12:00:00') - new Date(oldDate + 'T12:00:00')) / 86400000);
+      if (delta !== 0) {
+        // 只顺延「原本正好排在前一天后面」的那些天，手动改过日期的不动
+        let expect = oldDate;
+        for (let i = idx + 1; i < days.length; i++) {
+          const d = days[i];
+          if (!d.date || d.date !== U.addDays(expect, 1)) break;
+          patch[dayPath(d.id) + '/date'] = U.addDays(d.date, delta);
+          expect = d.date;
+          shifted++;
+        }
+      }
+    }
+
+    change(patch, {
+      action: 'day',
+      summary: '把「' + day.title + '」改到 ' + nextDate + (shifted ? '，后面 ' + shifted + ' 天一起顺延' : '')
+    });
+    if (shifted) toast('后面 ' + shifted + ' 天也跟着顺延了（可撤销）');
+  }
+
+  /**
+   * 按固定时间重排当天的地点。
+   * 没填固定时间的地点跟着它前面那个固定时间点一起搬，相对关系不变。
+   */
+  function sortDayByTime(day, silent) {
+    const sorted = Model.sortByFixedTime(Model.stopList(day));
+    const patch = {};
+    sorted.forEach(function (stop, i) {
+      const order = (i + 1) * Model.ORDER_STEP;
+      if (day.stops[stop.id] && day.stops[stop.id].order !== order) {
+        patch[stopPath(day.id, stop.id) + '/order'] = order;
+      }
+    });
+
+    if (!Object.keys(patch).length) {
+      if (!silent) toast('已经是按时间排好的了');
+      return false;
+    }
+
+    change(patch, { action: 'stop-move', summary: '按固定时间重排了「' + day.title + '」' });
+    render();
+    if (M.isReady()) refreshLegs(true);
+    return true;
   }
 
   function moveStop(day, index, delta) {
@@ -757,6 +825,7 @@
 
     const patch = {};
     let meta;
+    let savedId = editing.stopId;
     if (editing.stopId && day.stops[editing.stopId]) {
       // 只写真正改动的字段：撤销时能精确还原，两个人同时改同一个地点的不同字段也不会互相覆盖。
       // 比较的基准是「打开弹窗那一刻」的快照，不是当前值——否则同伴刚改的字段会被表单里的旧值覆盖回去。
@@ -773,6 +842,7 @@
       meta = { action: 'stop-edit', summary: describeEdit(base, Object.assign({}, base, data)) };
     } else {
       const stop = S.newStop(data, Model.nextOrder(day.stops));
+      savedId = stop.id;
       patch[stopPath(day.id, stop.id)] = stop;
       meta = { action: 'stop-add', summary: '加了新地点「' + stop.name + '」' };
     }
@@ -780,6 +850,15 @@
     closeStopDialog();
     change(patch, meta);
     render();
+
+    // 填了固定时间却排在不该在的位置，直接挪到时间对得上的地方
+    if (data.fixedStart && Model.fixedOutOfOrder(Model.stopList(day)) > 0) {
+      if (sortDayByTime(day, true)) {
+        const at = Model.stopList(day).findIndex(function (s) { return s.id === savedId; });
+        toast('已按 ' + data.fixedStart + ' 把「' + data.name + '」移到第 ' + (at + 1) + ' 位');
+      }
+    }
+
     if (M.isReady()) refreshLegs(true);
   }
 
@@ -857,6 +936,10 @@
     $('refreshBtn').addEventListener('click', function () {
       if (!M.isReady()) { toast('需要先填 Google Maps API Key'); return; }
       refreshLegs(false);
+    });
+    $('sortBtn').addEventListener('click', function () {
+      const day = currentDay();
+      if (day) sortDayByTime(day, false);
     });
     $('copyBtn').addEventListener('click', copyDayText);
     $('exportBtn').addEventListener('click', exportTrip);

@@ -96,6 +96,26 @@
     return node;
   }
 
+  /**
+   * Date -> 'yyyy-mm-dd'，按**本地时区**。
+   * 不能用 toISOString()：它先转成 UTC，东八区会整整倒退一天
+   * （本地 9/13 00:00 在 UTC 还是 9/12 16:00，切出来就成了 9/12）。
+   */
+  function toISODate(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + day;
+  }
+
+  /** 'yyyy-mm-dd' 加 n 天，返回同样格式；传空值时以今天为准 */
+  function addDays(iso, n) {
+    const base = iso ? new Date(iso + 'T12:00:00') : new Date();   // 中午为锚，躲开夏令时切换
+    if (isNaN(base.getTime())) return toISODate(new Date());
+    base.setDate(base.getDate() + (n || 0));
+    return toISODate(base);
+  }
+
   /** 时间戳 -> 「刚刚 / 3 分钟前 / 2 小时前 / 昨天 14:30」 */
   function relTime(ts) {
     if (!ts) return '';
@@ -142,6 +162,8 @@
     initials: initials,
     relTime: relTime,
     uid: uid,
-    formatDate: formatDate
+    formatDate: formatDate,
+    toISODate: toISODate,
+    addDays: addDays
   };
 })(window);
