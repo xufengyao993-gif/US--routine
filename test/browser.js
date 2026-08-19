@@ -4,6 +4,8 @@ const SP = process.env.SP || require('os').tmpdir();
 (async () => {
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
   const errors = [];
+  let failed = 0;
+  const ok2 = (c, msg) => { console.log((c ? '✅ ' : '❌ ') + msg); if (!c) failed++; };
   const watch = p => {
     p.on('pageerror', e => errors.push('PAGEERROR: ' + e.message));
     p.on('console', m => { if (m.type() === 'error') errors.push('CONSOLE: ' + m.text()); });
@@ -15,7 +17,9 @@ const SP = process.env.SP || require('os').tmpdir();
   const m = await iphone.newPage(); watch(m);
   // isMobile 模式下 Playwright 对 fixed 元素的可点击性判定有误报，用真实坐标点
   const tap = async (loc) => {
-    await loc.scrollIntoViewIfNeeded();
+    // 滚到视口中间，避开吸顶的日期标签行
+    await loc.evaluate(el => el.scrollIntoView({ block: 'center' }));
+    await m.waitForTimeout(120);
     const r = await loc.boundingBox();
     await m.touchscreen.tap(r.x + r.width / 2, r.y + r.height / 2);
     await m.waitForTimeout(250);
@@ -34,6 +38,25 @@ const SP = process.env.SP || require('os').tmpdir();
   await m.screenshot({ path: SP + '/mobile-map.png' });
   await tap(m.locator('.mobile-tab[data-view="list"]'));
   await m.screenshot({ path: SP + '/mobile.png' });
+
+  // Day 标签行：不能被 flex 挤扁，滚动时要吸在顶部
+  const tabsBefore = await m.locator('.daytabs').boundingBox();
+  ok2(tabsBefore.height > 40, 'Day 标签行高度正常（' + Math.round(tabsBefore.height) + 'px，被挤扁时只有 21px）');
+  const firstTab = await m.locator('.daytab').first().boundingBox();
+  ok2(firstTab.y + firstTab.height <= tabsBefore.y + tabsBefore.height + 1,
+    '标签完整显示在这一行里，没有溢出被裁掉');
+  await m.locator('.panel').evaluate(el => { el.scrollTop = 400; });
+  await m.waitForTimeout(300);
+  const tabsAfter = await m.locator('.daytabs').boundingBox();
+  ok2(Math.abs(tabsAfter.y - tabsBefore.y) < 2, '向下滚动后标签行仍吸在原位');
+  const onTop = await m.evaluate(() => {
+    const r = document.querySelector('.daytabs').getBoundingClientRect();
+    const el = document.elementFromPoint(r.left + r.width / 2, r.bottom - 4);
+    return el ? el.closest('.daytabs') !== null : false;
+  });
+  ok2(onTop, '标签行盖在行程卡片上方，不会被压住');
+  await m.locator('.panel').evaluate(el => { el.scrollTop = 0; });
+  await m.waitForTimeout(200);
 
   // Service Worker
   const swState = await m.evaluate(async () => {
@@ -90,4 +113,5 @@ const SP = process.env.SP || require('os').tmpdir();
 
   await browser.close();
   console.log(errors.length ? '\nERRORS:\n' + errors.join('\n') : '\n无 JS 报错 ✅');
+  if (failed) { console.log('有 ' + failed + ' 项断言失败'); process.exit(1); }
 })();

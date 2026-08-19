@@ -184,6 +184,17 @@ ok(P('') === null, '空输入返回 null');
 const tricky = P(`{ apiKey: "AIzaSyTEST", databaseURL: "https://x-default-rtdb.firebaseio.com", authDomain: "a-b.firebaseapp.com" }`);
 ok(tricky.authDomain === 'a-b.firebaseapp.com', '值里的 // 和连字符不受影响');
 
+/* --- 9b. 导航链接 --- */
+const nav = Util.navUrl({ lat: 37.7879, lng: -122.4103, name: '酒店' },
+                        { lat: 37.8078, lng: -122.475, name: '金门大桥' }, 'DRIVING');
+ok(nav.indexOf('https://www.google.com/maps/dir/?api=1') === 0, '用 Google 地图的通用链接（手机上会被 App 接管）');
+ok(nav.indexOf('origin=37.7879%2C-122.4103') > 0, '起点用经纬度');
+ok(nav.indexOf('travelmode=driving') > 0, '交通方式带过去');
+ok(nav.indexOf('dir_action=navigate') > 0, '直接进入导航而不是只看路线');
+const navByName = Util.navUrl({ name: 'Hotel A' }, { name: 'Pier 39' }, 'WALKING');
+ok(navByName.indexOf('destination=Pier%2039') > 0, '没有坐标时退回用名字');
+ok(navByName.indexOf('travelmode=walking') > 0, '步行模式');
+
 /* --- 10. 地图服务的选择 --- */
 const Maps = global.Maps;
 ok(Maps.pick({}) === 'osm', '什么都没配时默认用 OpenStreetMap');

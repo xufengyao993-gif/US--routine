@@ -128,6 +128,9 @@ html, body {
   padding: 10px 12px;
   overflow-x: auto;
   border-bottom: 1px solid var(--line);
+  /* 它是 flex 子项且设了 overflow，浏览器允许把它压到比内容还矮
+     （手机上整栏滚动时就会被压成一条，标签只露出半截）——按内容高度锁死 */
+  flex: 0 0 auto;
 }
 .daytab {
   border: 1px solid var(--line);
@@ -371,11 +374,14 @@ html, body {
   background: rgba(15, 23, 42, .92);
   color: #fff;
   padding: 10px 16px;
-  border-radius: 999px;
+  /* 圆角别用 999px：文字一换行就成了一个黑球 */
+  border-radius: 14px;
   font-size: 13px;
+  line-height: 1.5;
   z-index: 200;
-  max-width: 88vw;
-  text-align: center;
+  max-width: min(88vw, 30rem);
+  text-align: left;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, .25);
 }
 
 /* ---------- 邀请弹窗 ---------- */
@@ -559,7 +565,10 @@ body.is-dragging-active .leg { opacity: .35; }
   /* 手机上让整栏一起滚：当天概览随着往下翻自然让位，行程列表能占满屏幕。
      日期标签吸顶、添加按钮吸底，随时都点得到 */
   .panel { overflow-y: auto; -webkit-overflow-scrolling: touch; }
-  .daytabs { position: sticky; top: 0; z-index: 6; background: #fff; }
+  .daytabs { position: sticky; top: 0; z-index: 6; background: #fff; flex: 0 0 auto; }
+  .daymeta { flex: 0 0 auto; }
+  /* 点地图图钉滚到对应卡片时，别让它停在吸顶的标签行下面 */
+  .stop { scroll-margin-top: 5rem; }
   .timeline { overflow: visible; flex: 0 0 auto; }
   .panel-footer { position: sticky; bottom: 0; background: #fff; }
 

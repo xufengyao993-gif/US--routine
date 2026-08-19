@@ -78,6 +78,27 @@
     };
   }
 
+  /**
+   * 生成 Google 地图导航链接。
+   * 手机上装了 Google 地图 App 时，这个链接会被 App 接管（iOS 通用链接 / Android intent），
+   * dir_action=navigate 让它直接进入导航，而不是只展示路线。
+   */
+  function navUrl(from, to, mode) {
+    const point = function (p) {
+      if (!p) return '';
+      if (p.lat != null && p.lng != null) return Number(p.lat) + ',' + Number(p.lng);
+      return p.name || '';
+    };
+    const params = [
+      'api=1',
+      'origin=' + encodeURIComponent(point(from)),
+      'destination=' + encodeURIComponent(point(to)),
+      'travelmode=' + String(mode || 'DRIVING').toLowerCase(),
+      'dir_action=navigate'
+    ];
+    return 'https://www.google.com/maps/dir/?' + params.join('&');
+  }
+
   function el(tag, attrs, children) {
     const node = document.createElement(tag);
     if (attrs) {
@@ -159,6 +180,7 @@
     haversineKm: haversineKm,
     estimateLeg: estimateLeg,
     el: el,
+    navUrl: navUrl,
     initials: initials,
     relTime: relTime,
     uid: uid,

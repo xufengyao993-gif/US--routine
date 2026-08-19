@@ -83,7 +83,7 @@
       // 手机上地图默认是隐藏的，切过去时要重新量尺寸
       setTimeout(M.resize, 100);
       if (provider === 'osm' && !key) {
-        toast('地图已就绪。路程仍按直线估算 —— 填个 OpenRouteService Key 就有真实路网耗时（免费、不用信用卡）');
+        toast('地图好了。路程仍是估算，填个 OpenRouteService Key 就有真实耗时');
       }
       return refreshLegs(true);
     }).catch(function (err) {
@@ -557,7 +557,7 @@
     rows.push(U.el('div', { class: 'leg-actions' }, [
       U.el('a', {
         class: 'link-btn', target: '_blank', rel: 'noopener',
-        href: navUrl(leg.from, leg.to, leg.mode),
+        href: U.navUrl(leg.from, leg.to, leg.mode),
         text: isFood ? '🍜 导航去吃饭' : '🧭 导航'
       }),
       U.el('button', { class: 'link-btn ghost', text: '换交通方式', onclick: function () { cycleMode(day, item.stop); } })
@@ -615,13 +615,6 @@
         ])
       ])
     ]);
-  }
-
-  function navUrl(from, to, mode) {
-    const base = 'https://www.google.com/maps/dir/?api=1';
-    const o = from && from.lat != null ? from.lat + ',' + from.lng : encodeURIComponent(from ? from.name : '');
-    const d = to && to.lat != null ? to.lat + ',' + to.lng : encodeURIComponent(to ? to.name : '');
-    return base + '&origin=' + o + '&destination=' + d + '&travelmode=' + (mode || 'driving').toLowerCase();
   }
 
   /* ================= 行程编辑 ================= */
