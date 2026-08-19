@@ -37,7 +37,7 @@
     stops.forEach(function (stop, i) {
       const fixed = U.toMinutes(stop.fixedStart);
       const stay = Math.max(0, Number(stop.stayMin) || 0);
-      const mode = stop.arriveMode || 'DRIVING';
+      const mode = U.normalizeMode(stop.arriveMode);
 
       let leg = null;
       let arrive;

@@ -195,6 +195,44 @@ const navByName = Util.navUrl({ name: 'Hotel A' }, { name: 'Pier 39' }, 'WALKING
 ok(navByName.indexOf('destination=Pier%2039') > 0, '没有坐标时退回用名字');
 ok(navByName.indexOf('travelmode=walking') > 0, '步行模式');
 
+/* --- 9b. 交通方式：三种车共用同一套路线与耗时 --- */
+const CARS = ['UBER', 'RENTAL', 'TOUR'];
+ok(CARS.every(m => Util.MODES[m]), '三种车都在列表里');
+ok(!Util.MODES.DRIVING, '「开车」这一档已经去掉');
+ok(Util.MODES.UBER.label === 'Uber' && Util.MODES.RENTAL.label === '租车' && Util.MODES.TOUR.label === '旅行团',
+   '名字对得上：' + CARS.map(m => Util.MODES[m].label).join(' / '));
+ok(CARS.every(m => Util.routingOf(m) === 'DRIVING'), '三种车算路线时都走 DRIVING 档');
+
+const from = { lat: 37.7879, lng: -122.4103 }, to = { lat: 37.8078, lng: -122.4750 };
+const legs = CARS.map(m => Util.estimateLeg(from, to, m));
+ok(legs.every(l => l.minutes === legs[0].minutes && l.km === legs[0].km),
+   '三种车估算出来完全一样：' + legs[0].minutes + ' 分钟 / ' + legs[0].km + ' km');
+ok(Util.estimateLeg(from, to, 'WALKING').minutes !== legs[0].minutes, '步行仍然不一样');
+
+// 老数据和还没更新的同伴写来的 DRIVING 要能认
+ok(Util.normalizeMode('DRIVING') === 'RENTAL', '老的 DRIVING 当成租车');
+ok(Util.normalizeMode('TAXI') === 'UBER', 'TAXI 当成 Uber');
+ok(Util.normalizeMode('uber') === 'UBER', '小写也认');
+ok(Util.normalizeMode('') === 'RENTAL' && Util.normalizeMode(null) === 'RENTAL', '空值退回默认的租车');
+ok(Util.normalizeMode('乱七八糟') === 'RENTAL', '不认识的值退回默认，不会炸');
+ok(Util.modeInfo('DRIVING').label === '租车', '老数据显示成「租车」');
+ok(Util.estimateLeg(from, to, 'DRIVING').minutes === legs[0].minutes, '老数据算出来的耗时不变');
+
+// 导航链接要给 Google 它认识的档位
+CARS.forEach(m => {
+  ok(Util.navUrl(from, to, m).includes('travelmode=driving'), m + ' 的导航链接用 driving');
+});
+ok(Util.navUrl(from, to, 'TRANSIT').includes('travelmode=transit'), '公交用 transit');
+
+// 三种车共用一条路段缓存，不重复消耗额度
+const St = global.Store;
+St.setProvider('osm');
+St.putLeg(from, to, 'UBER', { minutes: 21, km: 8.3, path: [[1, 2]] });
+ok(St.getLeg(from, to, 'RENTAL') && St.getLeg(from, to, 'RENTAL').minutes === 21, '租车直接用 Uber 查过的结果');
+ok(St.getLeg(from, to, 'TOUR').minutes === 21, '旅行团也共用');
+ok(St.getLeg(from, to, 'DRIVING').minutes === 21, '老的 DRIVING 也命中同一条');
+ok(St.getLeg(from, to, 'WALKING') === null, '步行是另一条，不会串');
+
 /* --- 10. 地图服务的选择 --- */
 const Maps = global.Maps;
 ok(Maps.pick({}) === 'osm', '什么都没配时默认用 OpenStreetMap');

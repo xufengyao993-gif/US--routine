@@ -135,7 +135,7 @@
       const a = items[i - 1].stop;
       const b = items[i].stop;
       if (a.lat == null || b.lat == null) continue;
-      const mode = items[i].stop.arriveMode || 'DRIVING';
+      const mode = U.normalizeMode(items[i].stop.arriveMode);
       const cached = global.Store.getLeg(a, b, mode);
       let path = null;
       if (cached && cached.encoded && google.maps.geometry) {
@@ -198,7 +198,7 @@
     for (let i = 1; i < stops.length; i++) {
       const a = stops[i - 1];
       const b = stops[i];
-      const mode = b.arriveMode || 'DRIVING';
+      const mode = U.normalizeMode(b.arriveMode);
       if (a.lat == null || b.lat == null) continue;
       if (global.Store.getLeg(a, b, mode)) continue;
       jobs.push({ a: a, b: b, mode: mode });
@@ -220,12 +220,14 @@
 
   function requestLeg(a, b, mode) {
     return new Promise(function (resolve) {
+      // Google 只认 DRIVING / WALKING / BICYCLING / TRANSIT 这四个
+      const routing = U.routingOf(mode);
       const request = {
         origin: { lat: Number(a.lat), lng: Number(a.lng) },
         destination: { lat: Number(b.lat), lng: Number(b.lng) },
-        travelMode: mode
+        travelMode: routing
       };
-      if (mode === 'TRANSIT') {
+      if (routing === 'TRANSIT') {
         request.transitOptions = { departureTime: new Date() };
       }
       directionsService.route(request, function (res, status) {

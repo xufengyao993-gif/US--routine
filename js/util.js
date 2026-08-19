@@ -12,12 +12,35 @@
     other:      { label: '其他', icon: '📍', color: '#64748b' }
   };
 
+  /**
+   * 交通方式。routing 是算路线时真正用的档位——Uber、租车、旅行团
+   * 走的是同一条路、同样的耗时，区别只在你怎么坐上这辆车。
+   */
   const MODES = {
-    DRIVING:   { label: '开车',   icon: '🚗', kmh: 38, overhead: 6 },
-    WALKING:   { label: '步行',   icon: '🚶', kmh: 4.5, overhead: 0 },
-    TRANSIT:   { label: '公共交通', icon: '🚇', kmh: 20, overhead: 9 },
-    BICYCLING: { label: '骑行',   icon: '🚲', kmh: 14, overhead: 2 }
+    UBER:      { label: 'Uber',    icon: '🚕', kmh: 38, overhead: 6, routing: 'DRIVING' },
+    RENTAL:    { label: '租车',    icon: '🚗', kmh: 38, overhead: 6, routing: 'DRIVING' },
+    TOUR:      { label: '旅行团',  icon: '🚌', kmh: 38, overhead: 6, routing: 'DRIVING' },
+    TRANSIT:   { label: '公共交通', icon: '🚇', kmh: 20, overhead: 9, routing: 'TRANSIT' },
+    WALKING:   { label: '步行',    icon: '🚶', kmh: 4.5, overhead: 0, routing: 'WALKING' },
+    BICYCLING: { label: '骑行',    icon: '🚲', kmh: 14, overhead: 2, routing: 'BICYCLING' }
   };
+
+  // 老数据（以及还没刷新到新版的同伴）里存的是 DRIVING，一律当成「租车」
+  const MODE_ALIASES = { DRIVING: 'RENTAL', CAR: 'RENTAL', TAXI: 'UBER' };
+  const DEFAULT_MODE = 'RENTAL';
+
+  /** 任何来源的交通方式值 -> 现在认识的那一个 */
+  function normalizeMode(mode) {
+    const m = String(mode || '').toUpperCase();
+    if (MODES[m]) return m;
+    if (MODE_ALIASES[m]) return MODE_ALIASES[m];
+    return DEFAULT_MODE;
+  }
+
+  function modeInfo(mode) { return MODES[normalizeMode(mode)]; }
+
+  /** 算路线时用哪个档位（三种车共用 DRIVING） */
+  function routingOf(mode) { return modeInfo(mode).routing; }
 
   /** 'HH:MM' -> 从 0 点起的分钟数 */
   function toMinutes(hhmm) {
@@ -68,8 +91,8 @@
   function estimateLeg(from, to, mode) {
     const km = haversineKm(from, to);
     if (km == null) return null;
-    const cfg = MODES[mode] || MODES.DRIVING;
-    const routeKm = km * (mode === 'WALKING' ? 1.25 : 1.35);
+    const cfg = modeInfo(mode);
+    const routeKm = km * (cfg.routing === 'WALKING' ? 1.25 : 1.35);
     const minutes = (routeKm / cfg.kmh) * 60 + cfg.overhead;
     return {
       minutes: Math.max(1, Math.round(minutes)),
@@ -93,7 +116,7 @@
       'api=1',
       'origin=' + encodeURIComponent(point(from)),
       'destination=' + encodeURIComponent(point(to)),
-      'travelmode=' + String(mode || 'DRIVING').toLowerCase(),
+      'travelmode=' + routingOf(mode).toLowerCase(),
       'dir_action=navigate'
     ];
     return 'https://www.google.com/maps/dir/?' + params.join('&');
@@ -174,6 +197,10 @@
   global.Util = {
     CATEGORIES: CATEGORIES,
     MODES: MODES,
+    DEFAULT_MODE: DEFAULT_MODE,
+    normalizeMode: normalizeMode,
+    modeInfo: modeInfo,
+    routingOf: routingOf,
     toMinutes: toMinutes,
     toClock: toClock,
     toDuration: toDuration,

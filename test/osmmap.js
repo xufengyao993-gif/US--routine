@@ -58,8 +58,10 @@ const waitFor = async (fn, ms = 8000) => {
   ok((await p.locator('.leg-km').first().textContent()).includes('9.4'), '距离也是真实的：' + await p.locator('.leg-km').first().textContent());
 
   /* --- 公交没有真实数据，要老实标估算 --- */
-  await p.locator('.leg').first().locator('button', { hasText: '换交通方式' }).click();
-  await p.waitForTimeout(900);
+  await p.locator('.stop').nth(1).locator('button', { hasText: '编辑' }).click();
+  await p.locator('#f-mode').selectOption('TRANSIT');
+  await p.locator('#stopForm button[type=submit]').click();
+  await p.waitForTimeout(1200);
   const legHead = await p.locator('.leg-head').first().textContent();
   ok(legHead.includes('公共交通') && legHead.includes('估算'), '公交段如实标注估算：' + legHead.trim());
 

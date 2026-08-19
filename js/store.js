@@ -80,7 +80,9 @@
 
   function legKey(from, to, mode) {
     const r = function (n) { return n == null ? 'x' : Number(n).toFixed(4); };
-    return provider + '|' + mode + '|' + r(from.lat) + ',' + r(from.lng) + '>' + r(to.lat) + ',' + r(to.lng);
+    // 按 routing 档位存：Uber / 租车 / 旅行团 走同一条路，共用一条缓存，不重复查
+    return provider + '|' + U.routingOf(mode) + '|' +
+      r(from.lat) + ',' + r(from.lng) + '>' + r(to.lat) + ',' + r(to.lng);
   }
 
   function getLeg(from, to, mode) {
@@ -106,7 +108,7 @@
       lat: null,
       lng: null,
       stayMin: 60,
-      arriveMode: 'DRIVING',
+      arriveMode: U.DEFAULT_MODE,
       fixedStart: '',
       notes: ''
     }, partial || {});

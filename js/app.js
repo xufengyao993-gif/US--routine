@@ -541,7 +541,7 @@
 
   function renderLeg(day, item, prevItem) {
     const leg = item.leg;
-    const mode = U.MODES[leg.mode] || U.MODES.DRIVING;
+    const mode = U.modeInfo(leg.mode);
     const isFood = item.stop.category === 'food';
     const late = item.lateBy > 0;
 
@@ -754,8 +754,8 @@
   }
 
   function cycleMode(day, stop) {
-    const order = ['DRIVING', 'TRANSIT', 'WALKING', 'BICYCLING'];
-    const next = order[(order.indexOf(stop.arriveMode || 'DRIVING') + 1) % order.length];
+    const order = ['UBER', 'RENTAL', 'TOUR', 'TRANSIT', 'WALKING', 'BICYCLING'];
+    const next = order[(order.indexOf(U.normalizeMode(stop.arriveMode)) + 1) % order.length];
     const p = {}; p[stopPath(day.id, stop.id) + '/arriveMode'] = next;
     change(p, { action: 'stop-edit', summary: '去「' + stop.name + '」改成' + U.MODES[next].label });
     render();
@@ -809,7 +809,7 @@
     $('f-lat').value = s.lat == null ? '' : s.lat;
     $('f-lng').value = s.lng == null ? '' : s.lng;
     $('f-stay').value = s.stayMin;
-    $('f-mode').value = s.arriveMode || 'DRIVING';
+    $('f-mode').value = U.normalizeMode(s.arriveMode);
     $('f-fixed').value = s.fixedStart || '';
     $('f-notes').value = s.notes || '';
     attachDialogAutocomplete();
@@ -1217,7 +1217,7 @@
     state.schedule.items.forEach(function (item, i) {
       const cat = U.CATEGORIES[item.stop.category] || U.CATEGORIES.other;
       if (item.leg) {
-        const mode = U.MODES[item.leg.mode] || U.MODES.DRIVING;
+        const mode = U.modeInfo(item.leg.mode);
         lines.push('   ↓ ' + U.toClock(item.leg.departAt) + ' 出门，' + mode.label + ' ' +
           U.toDuration(item.leg.minutes) + (item.leg.km != null ? '（' + item.leg.km + ' km）' : ''));
       }

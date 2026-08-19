@@ -28,7 +28,8 @@
   const ORS_HOST_KEY = 'us-routine.ors-host';
   const PHOTON = 'https://photon.komoot.io/api';
 
-  // 我们的交通方式 -> ORS 的 profile。公交没有对应项，只能估算。
+  // routing 档位 -> ORS 的 profile。公交没有对应项，只能估算。
+  // Uber / 租车 / 旅行团都归到 DRIVING，同一条路只查一次。
   const PROFILES = {
     DRIVING: 'driving-car',
     WALKING: 'foot-walking',
@@ -149,7 +150,7 @@
       const b = items[i].stop;
       if (a.lat == null || b.lat == null) continue;
 
-      const mode = items[i].stop.arriveMode || 'DRIVING';
+      const mode = U.normalizeMode(items[i].stop.arriveMode);
       const cached = global.Store.getLeg(a, b, mode);
       const real = cached && cached.path && cached.path.length > 1;
       const path = real ? cached.path : [[Number(a.lat), Number(a.lng)], [Number(b.lat), Number(b.lng)]];
@@ -185,9 +186,9 @@
     for (let i = 1; i < stops.length; i++) {
       const a = stops[i - 1];
       const b = stops[i];
-      const mode = b.arriveMode || 'DRIVING';
+      const mode = U.normalizeMode(b.arriveMode);
       if (a.lat == null || b.lat == null) continue;
-      if (!PROFILES[mode]) continue;                       // 公交：只能估算
+      if (!PROFILES[U.routingOf(mode)]) continue;          // 公交：只能估算
       if (global.Store.getLeg(a, b, mode)) continue;
       jobs.push({ a: a, b: b, mode: mode });
     }
@@ -219,7 +220,7 @@
   }
 
   function requestLeg(a, b, mode) {
-    const profile = PROFILES[mode];
+    const profile = PROFILES[U.routingOf(mode)];
     if (!profile) return Promise.resolve(null);
 
     const query = profile + '?api_key=' + encodeURIComponent(orsKey) +
