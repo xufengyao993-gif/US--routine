@@ -91,6 +91,38 @@ const waitFor = async (fn, ms = 8000) => {
   const grew = await waitFor(async () => (await p.locator('.osm-pin').count()) === pins + 1);
   ok(grew, '新加的地点也出现在地图上');
 
+  /* --- OpenRouteService 换域名时要能自动回退 --- */
+  const tried = [];
+  const ctx2 = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  await stubTiles(ctx2);
+  await ctx2.addInitScript(() => localStorage.setItem('us-routine.config.v2',
+    JSON.stringify({ mapProvider: 'osm', orsApiKey: 'K', firebase: {} })));
+  await ctx2.route('https://api.openrouteservice.org/**', r => {   // 旧域名假装已经下线
+    tried.push('old');
+    r.fulfill({ status: 404, contentType: 'text/plain', body: 'gone' });
+  });
+  await ctx2.route('https://api.heigit.org/**', r => {
+    tried.push('new:' + r.request().url().split('/')[3]);   // 别用 URL，本文件顶部的常量把它盖住了
+    r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+      features: [{ properties: { summary: { duration: 900, distance: 5000 } },
+        geometry: { coordinates: [[-122.41, 37.78], [-122.45, 37.80]] } }] }) });
+  });
+  const p2 = await ctx2.newPage();
+  await p2.goto('http://127.0.0.1:8123/index.html?trip=osmhost00000000000000001', { waitUntil: 'domcontentloaded' });
+  await p2.waitForTimeout(600);
+  const fellBack = await waitFor(async () =>
+    (await p2.locator('.leg-dur').first().textContent()).includes('15 分钟'), 12000);
+  ok(fellBack, '旧域名 404 时自动改用新域名，路程照样算出来');
+  ok(tried.indexOf('old') === 0 && tried.some(t => t.startsWith('new:')), '确实先试旧域名再退到新域名');
+  const remembered = await p2.evaluate(() => localStorage.getItem('us-routine.ors-host'));
+  ok(remembered && remembered.includes('heigit.org'), '记住了能用的那个域名：' + remembered);
+  const oldCallsBefore = tried.filter(t => t === 'old').length;
+  await p2.locator('#menuBtn').click();
+  await p2.locator('#sortBtn').click();          // 触发一次重排 -> 会重新查路程
+  await p2.waitForTimeout(2500);
+  ok(tried.filter(t => t === 'old').length === oldCallsBefore, '之后不再浪费请求去试已经下线的域名');
+  await ctx2.close();
+
   /* --- 切到 Google 需要 Key，切回来还能用 --- */
   await p.locator('#menuBtn').click();
   await p.locator('#settingsBtn').click();

@@ -17,7 +17,15 @@
   const U = global.Util;
   const LEAFLET_JS = 'vendor/leaflet/leaflet.js';
   const LEAFLET_CSS = 'vendor/leaflet/leaflet.css';
-  const ORS = 'https://api.openrouteservice.org/v2/directions/';
+  // OpenRouteService 正在把域名从 api.openrouteservice.org 迁到 api.heigit.org。
+  // 旧域名现在还能用，但迟早会关。按顺序试，哪个通了就记住哪个，
+  // 免得旧域名下线那天（很可能是你正在路上的时候）路程时间悄悄变回估算。
+  const ORS_HOSTS = [
+    'https://api.openrouteservice.org/v2/directions/',
+    'https://api.heigit.org/ors/v2/directions/',
+    'https://api.heigit.org/v2/directions/'
+  ];
+  const ORS_HOST_KEY = 'us-routine.ors-host';
   const PHOTON = 'https://photon.komoot.io/api';
 
   // 我们的交通方式 -> ORS 的 profile。公交没有对应项，只能估算。
@@ -198,24 +206,57 @@
     }, Promise.resolve()).then(function () { return done; });
   }
 
+  /** 上次用通的那个域名排到最前面 */
+  function hostOrder() {
+    let saved = null;
+    try { saved = localStorage.getItem(ORS_HOST_KEY); } catch (e) { /* 无痕模式 */ }
+    if (!saved || ORS_HOSTS.indexOf(saved) < 0) return ORS_HOSTS.slice();
+    return [saved].concat(ORS_HOSTS.filter(function (h) { return h !== saved; }));
+  }
+
+  function rememberHost(host) {
+    try { localStorage.setItem(ORS_HOST_KEY, host); } catch (e) { /* 无所谓 */ }
+  }
+
   function requestLeg(a, b, mode) {
     const profile = PROFILES[mode];
     if (!profile) return Promise.resolve(null);
 
-    const url = ORS + profile + '?api_key=' + encodeURIComponent(orsKey) +
+    const query = profile + '?api_key=' + encodeURIComponent(orsKey) +
       '&start=' + Number(a.lng) + ',' + Number(a.lat) +
       '&end=' + Number(b.lng) + ',' + Number(b.lat);
 
-    return fetch(url)
-      .then(function (res) {
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        return res.json();
-      })
-      .then(parseRoute)
-      .catch(function (err) {
-        console.warn('路线查询失败：', err.message, a.name, '->', b.name);
-        return null;
-      });
+    const hosts = hostOrder();
+
+    function attempt(i) {
+      if (i >= hosts.length) return Promise.resolve(null);
+      return fetch(hosts[i] + query)
+        .then(function (res) {
+          // 401/403 是 Key 的问题，换域名也没用；只有找不到路由才值得换
+          if (res.status === 404 || res.status === 410 || res.status >= 500) {
+            throw new Error('HTTP ' + res.status);
+          }
+          if (!res.ok) {
+            return res.json().catch(function () { return null; }).then(function (body) {
+              const msg = body && body.error && (body.error.message || body.error);
+              throw Object.assign(new Error(msg || ('HTTP ' + res.status)), { fatal: true });
+            });
+          }
+          rememberHost(hosts[i]);
+          return res.json().then(parseRoute);
+        })
+        .catch(function (err) {
+          if (err.fatal) {
+            console.warn('路线查询被拒：', err.message, '（多半是 Key 不对或额度用完）');
+            return null;
+          }
+          if (i + 1 < hosts.length) return attempt(i + 1);   // 换下一个域名再试
+          console.warn('路线查询失败：', err.message, a.name, '->', b.name);
+          return null;
+        });
+    }
+
+    return attempt(0);
   }
 
   /** 把 ORS 的 GeoJSON 转成本项目的路段格式（导出出来单独测） */
@@ -366,6 +407,8 @@
     escapeHtml: escapeHtml,
     // 导出给测试用
     parseRoute: parseRoute,
+    hostOrder: hostOrder,
+    ORS_HOSTS: ORS_HOSTS,
     toPlace: toPlace
   };
 })(window);
