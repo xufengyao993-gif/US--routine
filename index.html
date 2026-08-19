@@ -33,6 +33,7 @@
         <label class="menu-item" for="importInput">⬆️ 导入 JSON</label>
         <button id="sampleBtn" class="menu-item">✨ 载入示例行程</button>
         <button id="newTripBtn" class="menu-item">🆕 新建一个行程</button>
+        <button id="openLinkBtn" class="menu-item">🔗 打开行程链接</button>
         <div class="menu-sep"></div>
         <button id="settingsBtn" class="menu-item">⚙️ 设置（Key / 昵称）</button>
       </div>
@@ -150,11 +151,29 @@
         <button id="shareCopy" class="primary-btn">复制链接</button>
         <button id="shareSystem" class="tool-btn">分享到…</button>
       </div>
+      <p class="dialog-hint" id="shareInstallHint"></p>
       <div id="shareMembers" class="share-members"></div>
       <div class="dialog-actions">
         <button type="button" id="shareClose" class="tool-btn">关闭</button>
       </div>
     </div>
+  </dialog>
+
+  <!-- 用链接打开某份行程 -->
+  <dialog id="restoreDialog" class="dialog">
+    <form id="restoreForm" method="dialog" class="dialog-form">
+      <h2 id="restoreTitle">打开行程链接</h2>
+      <p class="dialog-hint" id="restoreHint">把「👥 邀请」复制出来的链接粘进来，就会打开那份行程。</p>
+      <label class="field">
+        <span>行程链接</span>
+        <textarea id="f-link" rows="3" placeholder="https://….github.io/US--routine/?trip=…" autocomplete="off"></textarea>
+      </label>
+      <div class="dialog-actions">
+        <button type="button" id="restoreSkip" class="tool-btn">先用示例行程</button>
+        <button type="button" id="restoreCancel" class="tool-btn">取消</button>
+        <button type="submit" class="primary-btn">打开</button>
+      </div>
+    </form>
   </dialog>
 
   <!-- 修改记录 -->

@@ -20,6 +20,7 @@
     presence: [],
     history: [],
     claimed: false,
+    freshStorage: false,
     pendingRender: false
   };
 
@@ -49,12 +50,26 @@
     });
 
     startMaps(cfg);
+
+    // 从主屏幕图标打开时用的是独立存储，读不到浏览器里存的行程和配置。
+    // 第一次进来引导粘一次邀请链接，之后这套存储里就有了。
+    if (state.freshStorage && isStandalone()) {
+      setTimeout(function () { openRestore(true); }, 400);
+    }
+  }
+
+  /** 从主屏幕图标启动？（iOS/Android 的独立窗口模式） */
+  function isStandalone() {
+    return (global.matchMedia && global.matchMedia('(display-mode: standalone)').matches) ||
+      global.navigator.standalone === true;
   }
 
   function resolveTripId() {
     const params = new URLSearchParams(location.search);
     let id = params.get('trip');
     if (!id) id = localStorage.getItem(LAST_TRIP_KEY);
+    // 链接里没有、本地也没存过 —— 这套存储是全新的
+    state.freshStorage = !id;
     if (!id) id = Model.newTripId();
     localStorage.setItem(LAST_TRIP_KEY, id);
     if (params.get('trip') !== id) {
@@ -961,6 +976,14 @@
       location.href = location.pathname + '?trip=' + id;
     });
 
+    $('openLinkBtn').addEventListener('click', function () { openRestore(false); });
+    $('restoreForm').addEventListener('submit', submitRestore);
+    $('restoreCancel').addEventListener('click', function () { $('restoreDialog').close(); });
+    $('restoreSkip').addEventListener('click', function () {
+      $('restoreDialog').close();
+      toast('先用示例行程逛逛。想接上原来那份，随时用 ⋯ → 🔗 打开行程链接');
+    });
+
     // 邀请
     $('shareBtn').addEventListener('click', openShare);
     $('shareClose').addEventListener('click', function () { $('shareDialog').close(); });
@@ -1001,10 +1024,48 @@
     });
   }
 
+  /* ================= 用链接打开行程 ================= */
+  /** 从粘贴的文本里抠出行程 ID 和随链接带的配置 */
+  function parseTripLink(text) {
+    const t = String(text || '').trim();
+    if (!t) return null;
+    // ID 不限定十六进制：以后换了生成方式、或者别人手上是旧格式的 ID，也要能认
+    const trip = (t.match(/[?&]trip=([A-Za-z0-9_-]{8,})/) ||
+                  t.match(/^([A-Za-z0-9_-]{16,})$/) || [])[1];
+    if (!trip) return null;
+    const cfg = (t.match(/[#&]cfg=([A-Za-z0-9\-_]+)/) || [])[1];
+    return { trip: trip, cfg: cfg || '' };
+  }
+
+  function openRestore(auto) {
+    $('f-link').value = '';
+    $('restoreTitle').textContent = auto ? '把行程接上' : '打开行程链接';
+    $('restoreHint').textContent = auto
+      ? '从主屏幕图标打开的 App 有一套自己的存储空间，读不到你在浏览器里存的行程。把「👥 邀请」复制的链接粘一次，以后从图标进来就直接是这份行程了。'
+      : '把「👥 邀请」复制出来的链接粘进来，就会打开那份行程。';
+    $('restoreSkip').hidden = !auto;
+    $('restoreDialog').showModal();
+  }
+
+  function submitRestore(e) {
+    e.preventDefault();
+    const parsed = parseTripLink($('f-link').value);
+    if (!parsed) {
+      alert('这段文字里没找到行程链接。\n\n请在原来的浏览器里打开 App，点右上角「👥 邀请 → 复制链接」，再把整条链接粘进来。');
+      return;
+    }
+    $('restoreDialog').close();
+    localStorage.setItem(LAST_TRIP_KEY, parsed.trip);
+    location.href = location.pathname + '?trip=' + parsed.trip + (parsed.cfg ? '#cfg=' + parsed.cfg : '');
+  }
+
   /* ================= 邀请 / 设置 ================= */
   function openShare() {
     const link = location.origin + location.pathname + '?trip=' + state.tripId + Config.shareSuffix();
     $('shareLink').value = link;
+    $('shareInstallHint').textContent = isStandalone()
+      ? '你正从主屏幕图标里用它，这条链接同样可以发给朋友。'
+      : '提示：要把 App 装到手机主屏幕，请在打开这条链接的页面上操作，图标才会带着这份行程。';
 
     const mode = Sync.getMode();
     const hint = {
@@ -1220,9 +1281,13 @@
       console.warn('Service Worker 注册失败', err);
     });
 
+    // 首次安装时 Service Worker 会 claim 这个页面，同样触发 controllerchange。
+    // 那不是「有新版本」，不该刷新——否则每个人第一次访问都会被白刷一次，
+    // 页面上刚建立的状态（比如刚生成的行程、正在填的表单）也会被冲掉。
+    const hadController = !!navigator.serviceWorker.controller;
     let refreshing = false;
     navigator.serviceWorker.addEventListener('controllerchange', function () {
-      if (refreshing) return;
+      if (!hadController || refreshing) return;
       refreshing = true;
       location.reload();
     });
