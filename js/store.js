@@ -110,6 +110,7 @@
       stayMin: 60,
       arriveMode: U.DEFAULT_MODE,
       fixedStart: '',
+      hours: '',
       notes: ''
     }, partial || {});
   }

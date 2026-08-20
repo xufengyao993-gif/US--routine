@@ -27,6 +27,8 @@
   ];
   const ORS_HOST_KEY = 'us-routine.ors-host';
   const PHOTON = 'https://photon.komoot.io/api';
+  // Overpass 用来补一条搜索结果拿不到的信息：营业时间
+  const OVERPASS = 'https://overpass-api.de/api/interpreter';
 
   // routing 档位 -> ORS 的 profile。公交没有对应项，只能估算。
   // Uber / 租车 / 旅行团都归到 DRIVING，同一条路只查一次。
@@ -390,6 +392,29 @@
     return out;
   }
 
+  /**
+   * 按 Photon 给的 OSM id 去查营业时间。
+   * placeId 形如 'N123456'（N=节点 W=路 R=关系），查不到就返回空。
+   */
+  function fetchHours(placeId) {
+    const m = /^([NWR])(\d+)$/.exec(String(placeId || ''));
+    if (!m) return Promise.resolve('');
+    const kind = { N: 'node', W: 'way', R: 'relation' }[m[1]];
+    const query = '[out:json][timeout:10];' + kind + '(' + m[2] + ');out tags;';
+
+    return fetch(OVERPASS + '?data=' + encodeURIComponent(query))
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        const el = data && data.elements && data.elements[0];
+        const tags = (el && el.tags) || {};
+        return tags.opening_hours || '';
+      })
+      .catch(function (err) {
+        console.warn('查营业时间失败（不影响使用）', err.message);
+        return '';
+      });
+  }
+
   function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -405,6 +430,7 @@
     resize: resize,
     fetchLegs: fetchLegs,
     attachAutocomplete: attachAutocomplete,
+    fetchHours: fetchHours,
     escapeHtml: escapeHtml,
     // 导出给测试用
     parseRoute: parseRoute,

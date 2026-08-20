@@ -1,7 +1,7 @@
 global.window = global;
 global.crypto = require('crypto').webcrypto;
 const R = require('path').join(__dirname, '..', 'js') + '/';
-require(R+'util.js'); require(R+'model.js'); require(R+'schedule.js'); require(R+'data.js'); require(R+'config.js'); require(R+'store.js'); require(R+'maps-osm.js'); require(R+'maps.js');
+require(R+'util.js'); require(R+'model.js'); require(R+'schedule.js'); require(R+'data.js'); require(R+'config.js'); require(R+'hours.js'); require(R+'store.js'); require(R+'maps-osm.js'); require(R+'maps.js');
 const { Schedule, Util, Model, SampleTrip } = global;
 let n = 0; const ok = (c, m) => { n++; if (!c) { console.error('❌ ' + m); process.exitCode = 1; } };
 
@@ -232,6 +232,69 @@ ok(St.getLeg(from, to, 'RENTAL') && St.getLeg(from, to, 'RENTAL').minutes === 21
 ok(St.getLeg(from, to, 'TOUR').minutes === 21, '旅行团也共用');
 ok(St.getLeg(from, to, 'DRIVING').minutes === 21, '老的 DRIVING 也命中同一条');
 ok(St.getLeg(from, to, 'WALKING') === null, '步行是另一条，不会串');
+
+/* --- 9c. 营业时间 --- */
+const H = global.Hours;
+const at = (h, m) => h * 60 + (m || 0);
+const MON = 1, SUN = 0, SAT = 6;
+
+ok(H.parse('24/7').always, '认得 24/7');
+ok(H.parse('Mo-Fr 09:00-17:00').known && H.parse('Mo-Sa 10:00-22:00; Su 11:00-20:00').known, '认得常见写法');
+ok(H.parse('Mo-Fr 09:00-17:00; We off').byDay[3] === null, '后面的规则覆盖前面的（We off）');
+ok(H.parse('Sa-Su 10:00-16:00').byDay[6] && H.parse('Sa-Su 10:00-16:00').byDay[0], 'Sa-Su 跨周末');
+
+// 看不懂的一律不报警——宁可不提醒也不要误导
+['sunrise-sunset', 'Mo-Fr 09:00-17:00; PH off', 'Apr-Oct 10:00-18:00', '每天九点到五点', 'Mo-Fr', ''].forEach(x => {
+  ok(H.check(x, MON, at(10), at(11)).status === 'unknown', '看不懂就说不知道：' + (x || '(空)'));
+});
+
+ok(H.check('Mo-Fr 09:00-17:00', MON, at(10), at(12)).status === 'open', '正常在营业时间内');
+ok(H.check('24/7', SUN, at(3), at(4)).status === 'open', '24/7 任何时候都开');
+ok(H.check('Mo-Fr 09:00-17:00', SUN, at(10), at(12)).status === 'closed-day', '周日不营业');
+ok(H.check('Mo-Fr 10:00-17:00', MON, at(8), at(9)).status === 'before-open', '到的时候还没开门');
+ok(H.check('Mo-Fr 09:00-17:00', MON, at(18), at(19)).status === 'after-close', '到的时候已经关门');
+const cut = H.check('Mo-Fr 09:00-17:00', MON, at(16), at(18, 30));
+ok(cut.status === 'cut-short' && cut.message.includes('17:00'), '排到关门之后：' + cut.message);
+ok(H.check('Mo-Fr 09:00-12:00,13:00-18:00', MON, at(12, 10), at(12, 40)).status !== 'open', '午休时段不算营业');
+ok(H.check('Mo-Su 18:00-02:00', SAT, at(23), at(23, 59)).status === 'open', '跨夜营业');
+ok(H.weekdayOf('2026-09-12') === 6 && H.weekdayOf('2026-09-14') === 1, '星期换算正确');
+
+/* --- 9d. 顺序建议 --- */
+const mkStop = (id, name, lat, lng, fixed) => ({ id, name, lat, lng, arriveMode: 'RENTAL', fixedStart: fixed || '' });
+// 金门大桥和艺术宫挨着，中间插了个市中心 = 明显绕路
+const messy = [
+  mkStop('a', '酒店', 37.7879, -122.4103),
+  mkStop('b', '金门大桥', 37.8078, -122.4750),
+  mkStop('c', '渡轮大厦', 37.7955, -122.3937),
+  mkStop('d', '艺术宫', 37.8029, -122.4484),
+  mkStop('e', '回酒店', 37.7879, -122.4103)
+];
+const sug = Model.suggestOrder(messy);
+ok(sug && sug.savedMinutes >= 10, '绕路时给出建议，省约 ' + (sug && sug.savedMinutes) + ' 分钟');
+ok(sug.order[0] === 'a' && sug.order[sug.order.length - 1] === 'e', '第一个和最后一个不动');
+ok(sug.order.length === messy.length && new Set(sug.order).size === messy.length, '地点不多不少');
+ok(sug.from.length === sug.to.length, '前后对照长度一致');
+
+// 已经很顺就别废话
+const tidy = [messy[0], messy[1], messy[3], messy[2], messy[4]];
+ok(Model.suggestOrder(tidy) === null, '顺序已经合理时不提建议');
+
+// 固定时间的地点不许动
+const pinned = [
+  mkStop('a', '酒店', 37.7879, -122.4103),
+  mkStop('b', '金门大桥', 37.8078, -122.4750),
+  mkStop('c', '午饭', 37.7955, -122.3937, '12:30'),
+  mkStop('d', '艺术宫', 37.8029, -122.4484),
+  mkStop('e', '回酒店', 37.7879, -122.4103)
+];
+const sug2 = Model.suggestOrder(pinned);
+ok(!sug2 || sug2.order.indexOf('c') === 2, '有固定时间的地点留在原位' + (sug2 ? '（' + sug2.to.join('→') + '）' : '（没给建议）'));
+
+ok(Model.suggestOrder([mkStop('a', 'A', 1, 1), mkStop('b', 'B', 2, 2)]) === null, '地点太少不提建议');
+ok(Model.suggestOrder([]) === null && Model.suggestOrder(null) === null, '空输入不炸');
+const noCoord = messy.slice();
+noCoord[2] = { id: 'c', name: '没坐标', lat: null, lng: null, arriveMode: 'RENTAL' };
+ok(Model.suggestOrder(noCoord) === null, '有地点缺坐标时不乱建议');
 
 /* --- 10. 地图服务的选择 --- */
 const Maps = global.Maps;

@@ -498,6 +498,32 @@
       ]);
     })));
 
+    const shut = state.schedule.items.filter(function (it) {
+      const st = hoursCheck(day, it).status;
+      return st === 'closed-day' || st === 'before-open' || st === 'after-close';
+    });
+    if (shut.length) {
+      meta.appendChild(U.el('div', {
+        class: 'warn-bar',
+        text: '🚪 有 ' + shut.length + ' 个地点按营业时间算是关着门的：' +
+          shut.map(function (it) { return it.stop.name; }).join('、')
+      }));
+    }
+
+    if (!orderHintMuted(day)) {
+      const suggestion = Model.suggestOrder(Model.stopList(day));
+      if (suggestion) {
+        meta.appendChild(U.el('div', { class: 'warn-bar warn-bar-action' }, [
+          U.el('span', { text: '🔄 换个顺序大约能少绕 ' + U.toDuration(suggestion.savedMinutes) + '（估算）' }),
+          U.el('button', {
+            class: 'link-btn',
+            text: '看看怎么排',
+            onclick: function () { openReorder(day, suggestion); }
+          })
+        ]));
+      }
+    }
+
     const outOfOrder = Model.fixedOutOfOrder(Model.stopList(day));
     if (outOfOrder > 0) {
       meta.appendChild(U.el('div', { class: 'warn-bar warn-bar-action' }, [
@@ -581,6 +607,14 @@
     return U.el('div', { class: 'leg' + (isFood ? ' leg-food' : '') + (late ? ' leg-late' : '') }, rows);
   }
 
+  /** 这个地点到访时人家开不开门 */
+  function hoursCheck(day, item) {
+    if (!item.stop.hours) return { status: 'unknown' };
+    const weekday = global.Hours.weekdayOf(day.date);
+    if (weekday == null) return { status: 'unknown' };
+    return global.Hours.check(item.stop.hours, weekday, item.startAt, item.departAt);
+  }
+
   function renderStopCard(day, item, i, total) {
     const stop = item.stop;
     const cat = U.CATEGORIES[stop.category] || U.CATEGORIES.other;
@@ -592,6 +626,15 @@
     if (item.waitMin > 0) badges.push(U.el('span', { class: 'badge badge-wait', text: '空档 ' + U.toDuration(item.waitMin) }));
     if (item.lateBy > 0) badges.push(U.el('span', { class: 'badge badge-late', text: '迟到 ' + U.toDuration(item.lateBy) }));
     if (stop.lat == null) badges.push(U.el('span', { class: 'badge badge-muted', text: '缺坐标' }));
+
+    const hours = hoursCheck(day, item);
+    if (hours.status === 'closed-day' || hours.status === 'before-open' || hours.status === 'after-close') {
+      badges.push(U.el('span', { class: 'badge badge-late', title: '营业时间：' + stop.hours, text: '🚪 ' + hours.message }));
+    } else if (hours.status === 'cut-short') {
+      badges.push(U.el('span', { class: 'badge badge-wait', title: '营业时间：' + stop.hours, text: '🚪 ' + hours.message }));
+    } else if (hours.status === 'open') {
+      badges.push(U.el('span', { class: 'badge badge-fixed', title: '营业时间：' + stop.hours, text: '🚪 营业中' }));
+    }
     if (editor) badges.push(U.el('span', { class: 'badge badge-editing', style: 'color:' + (editor.color || '#2563eb'), text: '✏️ ' + editor.name + ' 正在改' }));
 
     return U.el('div', {
@@ -778,9 +821,36 @@
       const guessed = guessCategory(place.types);
       if (guessed) $('f-category').value = guessed;
       $('f-search').value = '';
+
+      // 顺手去查营业时间；查不到就算了，用户自己填也行
+      if (place.placeId) {
+        const note = $('hours-status');
+        note.textContent = '· 正在查营业时间…';
+        note.className = 'field-note';
+        M.fetchHours(place.placeId).then(function (hours) {
+          if (hours && !$('f-hours').value.trim()) $('f-hours').value = hours;
+          if (!hours) {
+            note.textContent = '· 地图数据里没有营业时间，可以自己填';
+            note.className = 'field-note';
+          } else {
+            updateHoursStatus();
+          }
+        });
+      }
     });
     autocompleteAttached = !!ac;
     if (ac) $('f-search').placeholder = '搜索地点（Google Places，自动带回坐标）';
+  }
+
+  /** 边填边告诉你这串写法系统看不看得懂 */
+  function updateHoursStatus() {
+    const note = $('hours-status');
+    const text = $('f-hours').value.trim();
+    if (!text) { note.textContent = ''; note.className = 'field-note'; return; }
+    const parsed = global.Hours.parse(text);
+    if (parsed.always) { note.textContent = '· 全天营业'; note.className = 'field-note is-ok'; }
+    else if (parsed.known) { note.textContent = '· 能识别，会帮你核对'; note.className = 'field-note is-ok'; }
+    else { note.textContent = '· 这种写法暂时看不懂，只当备注存着，不会核对'; note.className = 'field-note is-warn'; }
   }
 
   function guessCategory(types) {
@@ -811,7 +881,9 @@
     $('f-stay').value = s.stayMin;
     $('f-mode').value = U.normalizeMode(s.arriveMode);
     $('f-fixed').value = s.fixedStart || '';
+    $('f-hours').value = s.hours || '';
     $('f-notes').value = s.notes || '';
+    updateHoursStatus();
     attachDialogAutocomplete();
     if (stop) Sync.setEditing(stop.id);
     $('stopDialog').showModal();
@@ -839,6 +911,7 @@
       stayMin: Math.max(0, parseInt($('f-stay').value, 10) || 0),
       arriveMode: $('f-mode').value,
       fixedStart: $('f-fixed').value || '',
+      hours: $('f-hours').value.trim(),
       notes: $('f-notes').value.trim(),
       updatedBy: Sync.myName(),
       updatedAt: Date.now()
@@ -893,6 +966,7 @@
       parts.push(after.fixedStart ? '固定时间设为 ' + after.fixedStart : '取消了固定时间');
     }
     if ((before.category || '') !== (after.category || '')) parts.push('类型改成' + (U.CATEGORIES[after.category] || {}).label);
+    if ((before.hours || '') !== (after.hours || '')) parts.push('改了营业时间');
     if ((before.notes || '') !== (after.notes || '')) parts.push('改了备注');
     if ((before.lat !== after.lat) || (before.lng !== after.lng)) parts.push('换了位置');
     if (!parts.length) return '编辑了「' + before.name + '」';
@@ -911,6 +985,7 @@
       openStopDialog(day, null);
     });
     $('stopForm').addEventListener('submit', saveStopDialog);
+    $('f-hours').addEventListener('input', updateHoursStatus);
     $('stopCancel').addEventListener('click', closeStopDialog);
     $('stopDialog').addEventListener('close', function () { Sync.setEditing(null); });
 
@@ -976,6 +1051,16 @@
       location.href = location.pathname + '?trip=' + id;
     });
 
+    $('reorderApply').addEventListener('click', applySuggestion);
+    $('reorderClose').addEventListener('click', function () { $('reorderDialog').close(); });
+    $('reorderNever').addEventListener('click', function () {
+      const day = currentDay();
+      if (day) muteOrderHint(day);
+      $('reorderDialog').close();
+      render();
+      toast('这天不再提顺序建议');
+    });
+
     $('openLinkBtn').addEventListener('click', function () { openRestore(false); });
     $('restoreForm').addEventListener('submit', submitRestore);
     $('restoreCancel').addEventListener('click', function () { $('restoreDialog').close(); });
@@ -1022,6 +1107,64 @@
         if (view === 'map' && M.isReady()) setTimeout(M.resize, 60);
       });
     });
+  }
+
+  /* ================= 顺序建议（只提示，改不改你说了算） ================= */
+  const ORDER_HINT_KEY = 'us-routine.no-order-hint';
+
+  function orderHintMuted(day) {
+    try {
+      return localStorage.getItem(ORDER_HINT_KEY + ':' + state.tripId + ':' + day.id) === '1';
+    } catch (e) { return false; }
+  }
+
+  function muteOrderHint(day) {
+    try {
+      localStorage.setItem(ORDER_HINT_KEY + ':' + state.tripId + ':' + day.id, '1');
+    } catch (e) { /* 存不下就算了 */ }
+  }
+
+  let pendingSuggestion = null;
+
+  function openReorder(day, suggestion) {
+    pendingSuggestion = { dayId: day.id, suggestion: suggestion };
+    $('reorderHint').textContent = '按现在的顺序，路上大约 ' +
+      '要多花 ' + U.toDuration(suggestion.savedMinutes) +
+      (suggestion.savedKm > 0 ? '、多跑 ' + suggestion.savedKm + ' km' : '') + '。';
+
+    const now = $('reorderNow');
+    const next = $('reorderNext');
+    now.innerHTML = '';
+    next.innerHTML = '';
+    suggestion.from.forEach(function (name, i) {
+      now.appendChild(U.el('li', { text: name, class: name === suggestion.to[i] ? '' : 'is-moved' }));
+    });
+    suggestion.to.forEach(function (name, i) {
+      next.appendChild(U.el('li', { text: name, class: name === suggestion.from[i] ? '' : 'is-moved' }));
+    });
+
+    $('reorderDialog').showModal();
+  }
+
+  function applySuggestion() {
+    if (!pendingSuggestion) return;
+    const day = Model.dayList(state.trip).filter(function (d) { return d.id === pendingSuggestion.dayId; })[0];
+    if (!day) { $('reorderDialog').close(); return; }
+
+    const patch = {};
+    pendingSuggestion.suggestion.order.forEach(function (id, i) {
+      const order = (i + 1) * Model.ORDER_STEP;
+      if (day.stops[id] && day.stops[id].order !== order) {
+        patch[stopPath(day.id, id) + '/order'] = order;
+      }
+    });
+    $('reorderDialog').close();
+    if (!Object.keys(patch).length) return;
+
+    change(patch, { action: 'stop-move', summary: '按少绕路的建议重排了「' + day.title + '」' });
+    render();
+    if (M.isReady()) refreshLegs(true);
+    toast('已按建议重排（不满意就撤销）');
   }
 
   /* ================= 用链接打开行程 ================= */

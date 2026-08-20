@@ -109,6 +109,98 @@
     return n;
   }
 
+  /* ---------- 顺序建议（只提示，不自动改） ---------- */
+  /**
+   * 看看换个顺序能不能少绕路。
+   *
+   * 几条自我约束，因为「你这样排也许自有道理」：
+   *   - 第一个和最后一个不动（通常是酒店）
+   *   - 填了固定时间的地点原地不动（订位、门票时段）
+   *   - 只在「相邻且都没被钉住」的一段里做 2-opt 反转
+   *   - 省得不够多就不吭声
+   *
+   * 用的是直线估算而不是真实路线：不额外消耗路线额度，也能离线算。
+   * 所以给出的数字是「大概」，界面上要说清楚。
+   *
+   * @returns {Object|null} {order:[id…], savedMinutes, savedKm, from:[name…], to:[name…]}
+   */
+  function suggestOrder(stops, opts) {
+    const list = (stops || []).filter(function (s) { return s.lat != null && s.lng != null; });
+    if (list.length < 4 || list.length !== (stops || []).length) return null;   // 有点缺坐标就不建议
+
+    const options = opts || {};
+    const minSaved = options.minSaved || 10;         // 至少省这么多分钟才说
+    const minRatio = options.minRatio || 0.08;       // 且至少省这么大比例
+
+    const pinned = list.map(function (s, i) {
+      return i === 0 || i === list.length - 1 || !!U.toMinutes(s.fixedStart);
+    });
+
+    const cost = function (seq) {
+      let total = 0;
+      for (let i = 1; i < seq.length; i++) {
+        const leg = U.estimateLeg(seq[i - 1], seq[i], seq[i].arriveMode);
+        if (leg) total += leg.minutes;
+      }
+      return total;
+    };
+
+    const km = function (seq) {
+      let total = 0;
+      for (let i = 1; i < seq.length; i++) {
+        const leg = U.estimateLeg(seq[i - 1], seq[i], seq[i].arriveMode);
+        if (leg && leg.km != null) total += leg.km;
+      }
+      return total;
+    };
+
+    const before = cost(list);
+    let best = list.slice();
+    let bestCost = before;
+
+    // 2-opt：反转一段中间的顺序，看看总路程是不是更短
+    let improved = true;
+    let guard = 0;
+    while (improved && guard++ < 40) {
+      improved = false;
+      for (let i = 1; i < best.length - 2; i++) {
+        for (let j = i + 1; j < best.length - 1; j++) {
+          let blocked = false;
+          for (let k = i; k <= j; k++) {
+            if (pinnedOf(best[k])) { blocked = true; break; }
+          }
+          if (blocked) continue;
+
+          const candidate = best.slice(0, i)
+            .concat(best.slice(i, j + 1).reverse())
+            .concat(best.slice(j + 1));
+          const c = cost(candidate);
+          if (c < bestCost - 0.5) {
+            best = candidate;
+            bestCost = c;
+            improved = true;
+          }
+        }
+      }
+    }
+
+    function pinnedOf(stop) {
+      const idx = list.indexOf(stop);
+      return idx < 0 ? true : pinned[idx];
+    }
+
+    const saved = before - bestCost;
+    if (saved < minSaved || saved / Math.max(1, before) < minRatio) return null;
+
+    return {
+      order: best.map(function (s) { return s.id; }),
+      savedMinutes: Math.round(saved),
+      savedKm: Math.round((km(list) - km(best)) * 10) / 10,
+      from: list.map(function (s) { return s.name; }),
+      to: best.map(function (s) { return s.name; })
+    };
+  }
+
   /* ---------- 按路径读写（撤销功能要靠它拿「改之前的值」） ---------- */
   /** 读 'days/d1/stops/s3/stayMin' 这样的路径，返回深拷贝（避免后续改动串了引用） */
   function getAtPath(root, path) {
@@ -216,6 +308,7 @@
     orderForMove: orderForMove,
     reindex: reindex,
     sortByFixedTime: sortByFixedTime,
+    suggestOrder: suggestOrder,
     fixedOutOfOrder: fixedOutOfOrder,
     getAtPath: getAtPath,
     setAtPath: setAtPath,

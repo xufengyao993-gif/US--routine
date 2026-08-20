@@ -67,6 +67,11 @@
   }
   function escapeHtml(s) { return impl ? impl.escapeHtml(s) : String(s == null ? '' : s); }
 
+  /** 有的实现能顺便查到营业时间，没有就当查不到 */
+  function fetchHours(placeId) {
+    return impl && impl.fetchHours ? impl.fetchHours(placeId) : Promise.resolve('');
+  }
+
   global.Maps = {
     pick: pick,
     keyFor: keyFor,
@@ -81,6 +86,7 @@
     resize: resize,
     fetchLegs: fetchLegs,
     attachAutocomplete: attachAutocomplete,
+    fetchHours: fetchHours,
     escapeHtml: escapeHtml
   };
 })(window);

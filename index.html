@@ -129,6 +129,11 @@
       </div>
 
       <label class="field">
+        <span>营业时间 <span id="hours-status" class="field-note"></span></span>
+        <input id="f-hours" type="text" placeholder="例：Mo-Fr 09:00-17:00　或　24/7　（从搜索结果选地点时会自动填）" autocomplete="off" />
+      </label>
+
+      <label class="field">
         <span>备注</span>
         <textarea id="f-notes" rows="2" placeholder="订位号、停车提示、必点菜…"></textarea>
       </label>
@@ -157,6 +162,31 @@
       <div id="shareMembers" class="share-members"></div>
       <div class="dialog-actions">
         <button type="button" id="shareClose" class="tool-btn">关闭</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- 顺序建议 -->
+  <dialog id="reorderDialog" class="dialog">
+    <div class="dialog-form">
+      <h2>换个顺序可能少绕点路</h2>
+      <p class="dialog-hint" id="reorderHint"></p>
+      <div class="reorder-compare">
+        <div class="reorder-col">
+          <div class="reorder-head">现在</div>
+          <ol id="reorderNow" class="reorder-list"></ol>
+        </div>
+        <div class="reorder-col">
+          <div class="reorder-head is-new">建议</div>
+          <ol id="reorderNext" class="reorder-list"></ol>
+        </div>
+      </div>
+      <p class="dialog-hint">按直线距离估的，只作参考。固定时间的地点、每天第一个和最后一个都没动。
+        你要是有别的考虑（顺路买东西、跟人约了、想避开人多的时段），忽略就好。</p>
+      <div class="dialog-actions">
+        <button type="button" id="reorderNever" class="tool-btn">这天不用再提</button>
+        <button type="button" id="reorderClose" class="tool-btn">先不改</button>
+        <button type="button" id="reorderApply" class="primary-btn">按这个顺序排</button>
       </div>
     </div>
   </dialog>
@@ -238,6 +268,7 @@
 
   <script src="js/app-config.js"></script>
   <script src="js/util.js"></script>
+  <script src="js/hours.js"></script>
   <script src="js/model.js"></script>
   <script src="js/config.js"></script>
   <script src="js/data.js"></script>
