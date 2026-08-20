@@ -291,6 +291,32 @@ const sug2 = Model.suggestOrder(pinned);
 ok(!sug2 || sug2.order.indexOf('c') === 2, '有固定时间的地点留在原位' + (sug2 ? '（' + sug2.to.join('→') + '）' : '（没给建议）'));
 
 ok(Model.suggestOrder([mkStop('a', 'A', 1, 1), mkStop('b', 'B', 2, 2)]) === null, '地点太少不提建议');
+
+// 有地点没坐标：不再整天放弃，而是把它钉在原地，其余照常优化
+// 缺坐标的点被钉在原地（它夹在唯一可优化的那一段中间时会挡住重排，这是有意的保守做法）
+const partial = messy.slice();
+partial.splice(4, 0, { id: 'x', name: '没坐标的点', lat: null, lng: null, arriveMode: 'RENTAL' });
+const sugPartial = Model.suggestOrder(partial);
+ok(sugPartial, '有一个点缺坐标时仍然给得出建议');
+ok(sugPartial.order.indexOf('x') === 4, '缺坐标的点留在原来的位置（第 ' + (sugPartial.order.indexOf('x') + 1) + ' 位）');
+ok(sugPartial.order.length === partial.length, '一个地点都没丢');
+
+// 有坐标的点不够 4 个就别比了
+const tooFew = [mkStop('a', 'A', 37.78, -122.41), { id: 'y', name: '无', lat: null, lng: null },
+                { id: 'z', name: '无2', lat: null, lng: null }, mkStop('b', 'B', 37.80, -122.47)];
+ok(Model.suggestOrder(tooFew) === null, '有坐标的点太少时不建议');
+
+// 手动查看用更低的门槛
+const mild = [
+  mkStop('a', '酒店', 37.7879, -122.4103),
+  mkStop('b', '近点', 37.7900, -122.4150),
+  mkStop('c', '远点', 37.8100, -122.4700),
+  mkStop('d', '中点', 37.7950, -122.4300),
+  mkStop('e', '回酒店', 37.7879, -122.4103)
+];
+const strict = Model.suggestOrder(mild);
+const loose = Model.suggestOrder(mild, { minSaved: 5, minRatio: 0.03 });
+ok(!strict || loose, '放低门槛后至少不比默认门槛给得少');
 ok(Model.suggestOrder([]) === null && Model.suggestOrder(null) === null, '空输入不炸');
 const noCoord = messy.slice();
 noCoord[2] = { id: 'c', name: '没坐标', lat: null, lng: null, arriveMode: 'RENTAL' };

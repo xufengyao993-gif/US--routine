@@ -125,15 +125,21 @@
    * @returns {Object|null} {order:[id…], savedMinutes, savedKm, from:[name…], to:[name…]}
    */
   function suggestOrder(stops, opts) {
-    const list = (stops || []).filter(function (s) { return s.lat != null && s.lng != null; });
-    if (list.length < 4 || list.length !== (stops || []).length) return null;   // 有点缺坐标就不建议
+    const list = (stops || []).slice();
+    const withCoords = list.filter(function (s) { return s.lat != null && s.lng != null; });
+    if (list.length < 4 || withCoords.length < 4) return null;
 
     const options = opts || {};
     const minSaved = options.minSaved || 10;         // 至少省这么多分钟才说
     const minRatio = options.minRatio || 0.08;       // 且至少省这么大比例
 
-    const pinned = list.map(function (s, i) {
-      return i === 0 || i === list.length - 1 || !!U.toMinutes(s.fixedStart);
+    // 钉住不动的：首尾、有固定时间的、以及没坐标的
+    // （没坐标就无从判断远近，与其瞎猜，不如让它留在原地，别的点照样能优化）
+    const pinnedIds = {};
+    list.forEach(function (s, i) {
+      if (i === 0 || i === list.length - 1 || U.toMinutes(s.fixedStart) || s.lat == null) {
+        pinnedIds[s.id] = true;
+      }
     });
 
     const cost = function (seq) {
@@ -167,7 +173,7 @@
         for (let j = i + 1; j < best.length - 1; j++) {
           let blocked = false;
           for (let k = i; k <= j; k++) {
-            if (pinnedOf(best[k])) { blocked = true; break; }
+            if (pinnedIds[best[k].id]) { blocked = true; break; }
           }
           if (blocked) continue;
 
@@ -182,11 +188,6 @@
           }
         }
       }
-    }
-
-    function pinnedOf(stop) {
-      const idx = list.indexOf(stop);
-      return idx < 0 ? true : pinned[idx];
     }
 
     const saved = before - bestCost;

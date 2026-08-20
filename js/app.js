@@ -517,7 +517,7 @@
     }
 
     if (!orderHintMuted(day)) {
-      const suggestion = Model.suggestOrder(Model.stopList(day));
+      const suggestion = Model.suggestOrder(Model.stopList(day));   // 默认门槛：省 10 分钟且 8% 以上
       if (suggestion) {
         meta.appendChild(U.el('div', { class: 'warn-bar warn-bar-action' }, [
           U.el('span', { text: '🔄 换个顺序大约能少绕 ' + U.toDuration(suggestion.savedMinutes) + '（估算）' }),
@@ -1067,6 +1067,7 @@
       location.href = location.pathname + '?trip=' + id;
     });
 
+    $('reorderBtn').addEventListener('click', checkReorder);
     $('reorderApply').addEventListener('click', applySuggestion);
     $('reorderClose').addEventListener('click', function () { $('reorderDialog').close(); });
     $('reorderNever').addEventListener('click', function () {
@@ -1228,6 +1229,25 @@
   }
 
   let pendingSuggestion = null;
+
+  /** 菜单里主动查：门槛放低一点，没得优化也要给个明确答复 */
+  function checkReorder() {
+    const day = currentDay();
+    if (!day) return;
+    const stops = Model.stopList(day);
+    const noCoord = stops.filter(function (s) { return s.lat == null; }).length;
+
+    const suggestion = Model.suggestOrder(stops, { minSaved: 5, minRatio: 0.03 });
+    if (suggestion) { openReorder(day, suggestion); return; }
+
+    if (stops.filter(function (s) { return s.lat != null; }).length < 4) {
+      toast('这天有坐标的地点还不够（至少 4 个），没法比较绕不绕路');
+    } else if (noCoord) {
+      toast('这天已经挺顺的了，没找到更省的排法（' + noCoord + ' 个地点没坐标，没参与比较）');
+    } else {
+      toast('这天已经挺顺的了，没找到更省的排法');
+    }
+  }
 
   function openReorder(day, suggestion) {
     pendingSuggestion = { dayId: day.id, suggestion: suggestion };

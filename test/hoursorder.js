@@ -149,6 +149,28 @@ const ok = (c, m) => { console.log((c ? '✅ ' : '❌ ') + m); if (!c) fails++; 
   await p.waitForTimeout(1800);
   ok(await p.locator('.warn-bar-action').filter({ hasText: '少绕' }).count() === 0, '刷新后也不再提');
 
+  /* ---------- 菜单里主动查顺序 ---------- */
+  // 回到示例第一天（本来就排得挺顺，不会自动提示）
+  await p.locator('.daytab').nth(0).click();
+  await p.waitForTimeout(600);
+  ok(await p.locator('.warn-bar-action').filter({ hasText: '少绕' }).count() === 0, '排得顺的一天不会自动弹提示');
+
+  await p.locator('#menuBtn').click();
+  await p.locator('#reorderBtn').click();
+  await p.waitForTimeout(500);
+  const verdict = await p.locator('#toast').textContent();
+  ok(verdict.includes('挺顺的'), '主动查会明确回答「已经挺顺的了」：' + verdict);
+  ok(await p.locator('#reorderDialog').isVisible() === false, '没得优化时不开弹窗');
+
+  // 绕路那天主动查 -> 应该开弹窗
+  await p.locator('.daytab').nth(3).click();
+  await p.waitForTimeout(600);
+  await p.locator('#menuBtn').click();
+  await p.locator('#reorderBtn').click();
+  await p.waitForTimeout(500);
+  ok(await p.locator('#reorderDialog').isVisible(), '绕路那天主动查会打开对照弹窗');
+  await p.locator('#reorderClose').click();
+
   await browser.close();
   console.log(fails ? '\n有 ' + fails + ' 项失败' : '\n营业时间与顺序建议全部通过 ✅');
   process.exit(fails ? 1 : 0);
