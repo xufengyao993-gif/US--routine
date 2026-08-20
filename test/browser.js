@@ -1,4 +1,4 @@
-const { stubTiles } = require('./helpers');
+const { stubTiles, stubWeather } = require('./helpers');
 const { chromium, devices } = require('playwright');
 const SP = process.env.SP || require('os').tmpdir();
 (async () => {
@@ -14,6 +14,7 @@ const SP = process.env.SP || require('os').tmpdir();
   /* ---------- 手机 ---------- */
   const iphone = await browser.newContext(devices['iPhone 13']);
   await stubTiles(iphone);
+  await stubWeather(iphone);
   const m = await iphone.newPage(); watch(m);
   // isMobile 模式下 Playwright 对 fixed 元素的可点击性判定有误报，用真实坐标点
   const tap = async (loc) => {
@@ -103,6 +104,7 @@ const SP = process.env.SP || require('os').tmpdir();
   /* ---------- 桌面 ---------- */
   const desk = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   await stubTiles(desk);
+  await stubWeather(desk);
   const d = await desk.newPage(); watch(d);
   await d.goto('http://127.0.0.1:8123/index.html', { waitUntil: 'networkidle' });
   await d.waitForTimeout(500);

@@ -1,7 +1,7 @@
 global.window = global;
 global.crypto = require('crypto').webcrypto;
 const R = require('path').join(__dirname, '..', 'js') + '/';
-require(R+'util.js'); require(R+'model.js'); require(R+'schedule.js'); require(R+'data.js'); require(R+'config.js'); require(R+'hours.js'); require(R+'store.js'); require(R+'maps-osm.js'); require(R+'maps.js');
+require(R+'util.js'); require(R+'model.js'); require(R+'schedule.js'); require(R+'data.js'); require(R+'config.js'); require(R+'hours.js'); require(R+'weather.js'); require(R+'store.js'); require(R+'maps-osm.js'); require(R+'maps.js');
 const { Schedule, Util, Model, SampleTrip } = global;
 let n = 0; const ok = (c, m) => { n++; if (!c) { console.error('❌ ' + m); process.exitCode = 1; } };
 
@@ -295,6 +295,64 @@ ok(Model.suggestOrder([]) === null && Model.suggestOrder(null) === null, '空输
 const noCoord = messy.slice();
 noCoord[2] = { id: 'c', name: '没坐标', lat: null, lng: null, arriveMode: 'RENTAL' };
 ok(Model.suggestOrder(noCoord) === null, '有地点缺坐标时不乱建议');
+
+/* --- 9e. 天气 --- */
+const W = global.Weather;
+
+// 按日期远近选路子
+const iso = d => { const x = new Date('2026-08-20T12:00:00'); x.setDate(x.getDate() + d);
+  return x.getFullYear() + '-' + String(x.getMonth()+1).padStart(2,'0') + '-' + String(x.getDate()).padStart(2,'0'); };
+const TODAY = '2026-08-20';
+ok(W.planFor(iso(0), TODAY) === 'forecast', '今天 -> 预报');
+ok(W.planFor(iso(3), TODAY) === 'forecast', '三天后 -> 预报');
+ok(W.planFor(iso(15), TODAY) === 'forecast', '15 天后 -> 还在预报范围');
+ok(W.planFor(iso(16), TODAY) === 'normals', '16 天后 -> 只能给往年同期');
+ok(W.planFor(iso(60), TODAY) === 'normals', '两个月后 -> 往年同期');
+ok(W.planFor(iso(-2), TODAY) === 'forecast', '前两天 -> 仍可从预报接口拿实测');
+ok(W.planFor(iso(-30), TODAY) === 'past', '一个月前 -> 历史实测');
+ok(W.planFor('', TODAY) === 'none' && W.planFor('乱写', TODAY) === 'none', '日期不合法时不查');
+
+// 天气代码
+ok(W.describe(0).label === '晴' && W.describe(95).label === '雷阵雨', '代码翻译');
+ok(W.describe(12345).icon === '🌡️', '没见过的代码不炸');
+ok(W.worstCode([0, 2, 61, 3]) === 61, '一段时间里取最糟的那种：小雨');
+ok(W.worstCode([0, 95, 61]) === 95, '雷阵雨比小雨糟');
+ok(W.worstCode([]) === null && W.worstCode([null, null]) === null, '空数据返回 null');
+
+// 逐小时切片
+const hourly = {
+  hours: Array.from({ length: 24 }, (_, i) => i),
+  temp:   Array.from({ length: 24 }, (_, i) => 10 + i * 0.5),
+  precip: Array.from({ length: 24 }, (_, i) => (i >= 14 && i <= 16) ? 70 : 10),
+  code:   Array.from({ length: 24 }, (_, i) => (i >= 14 && i <= 16) ? 63 : 1)
+};
+const morning = W.slice(hourly, 9 * 60, 11 * 60);
+ok(morning.tempMin === 15 && morning.tempMax === 15, '上午 9–11 点气温：' + morning.tempMin + '–' + morning.tempMax);
+ok(morning.precipMax === 10 && morning.rainHours.length === 0, '上午不下雨');
+const afternoon = W.slice(hourly, 14 * 60, 17 * 60);
+ok(afternoon.code === 63 && afternoon.precipMax === 70, '下午取到中雨、降水 70%');
+ok(afternoon.rainHours.join() === '14,15,16', '标出会下雨的小时：' + afternoon.rainHours.join(','));
+ok(W.slice(hourly, 0, 0).tempMax != null, '零长度时段也能取到那一小时');
+ok(W.slice(null, 0, 60) === null && W.slice({ hours: [] }, 0, 60) === null, '没有逐小时数据时返回 null');
+// 跨午夜的行程不越界
+ok(W.slice(hourly, 23 * 60, 25 * 60).tempMax != null, '跨午夜时截到 23 点为止，不炸');
+
+ok(W.rainWindows([14, 15, 16]).join() === '14:00–17:00', '连续的小时并成一段：' + W.rainWindows([14,15,16]));
+ok(W.rainWindows([9, 10, 15, 16]).join(' / ') === '09:00–11:00 / 15:00–17:00', '不连续的分成两段');
+ok(W.rainWindows([]).length === 0, '不下雨就没有区间');
+
+// 解析 Open-Meteo 的返回
+const parsed = W.parseActual({
+  daily: { time: ['2026-09-12'], temperature_2m_max: [24.4], temperature_2m_min: [15.6],
+           precipitation_probability_max: [40], weather_code: [61] },
+  hourly: { time: ['2026-09-12T00:00', '2026-09-12T01:00'], temperature_2m: [16, 15],
+            precipitation_probability: [10, 20], weather_code: [1, 2] }
+}, 'forecast');
+ok(parsed.tempMax === 24 && parsed.tempMin === 16, '气温取整：' + parsed.tempMin + '–' + parsed.tempMax);
+ok(parsed.label === '小雨' && parsed.icon === '🌦️', '当天天气：' + parsed.icon + parsed.label);
+ok(parsed.hourly.hours.join() === '0,1', '逐小时的钟点解析正确');
+ok(W.parseActual({}, 'forecast') === null && W.parseActual(null, 'forecast') === null, '坏数据返回 null');
+ok(W.parseActual({ daily: { time: [] } }, 'forecast') === null, '空结果返回 null');
 
 /* --- 10. 地图服务的选择 --- */
 const Maps = global.Maps;

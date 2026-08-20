@@ -1,5 +1,5 @@
 /* 拖拽排序 + 修改记录 / 撤销（本地模式，不需要 Firebase） */
-const { stubTiles } = require('./helpers');
+const { stubTiles, stubWeather } = require('./helpers');
 const { chromium, devices } = require('playwright');
 const URL = 'http://127.0.0.1:8123/index.html?trip=dragtest0000000000000001';
 
@@ -12,6 +12,7 @@ const ok = (c, m) => { console.log((c ? '✅ ' : '❌ ') + m); if (!c) fails++; 
   /* ---------- 桌面：鼠标拖拽 ---------- */
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   await stubTiles(ctx);
+  await stubWeather(ctx);
   const p = await ctx.newPage();
   p.on('dialog', d => d.accept());
   p.on('pageerror', e => { console.log('PAGEERROR', e.message); fails++; });
@@ -21,12 +22,18 @@ const ok = (c, m) => { console.log((c ? '✅ ' : '❌ ') + m); if (!c) fails++; 
   const names = async () => (await p.locator('.stop-name').allTextContents()).map(s => s.replace(/^\S+\s/, ''));
   const before = await names();
 
-  // 把第 3 张卡片拖到第 1 位（先把列表滚到顶，保证起点和落点都在视口内）
+  // 把第 2 张卡片拖到第 1 位。
+  // 起点别选在列表上下边缘 56px 内——那是自动滚动的触发区，一按下去列表就开始滚
   await p.locator('.timeline').evaluate(el => { el.scrollTop = 0; });
-  await p.waitForTimeout(100);
-  const handle = p.locator('.stop').nth(2).locator('.drag-handle');
+  await p.locator('.stop').nth(1).scrollIntoViewIfNeeded();
+  await p.waitForTimeout(200);
+  const handle = p.locator('.stop').nth(1).locator('.drag-handle');
   const h = await handle.boundingBox();
   const targetCard = await p.locator('.stop').nth(0).boundingBox();
+  const vh = p.viewportSize().height;
+  ok(h.y > 80 && h.y < vh - 120 && targetCard.y > 60,
+     '起点和落点都在视口内且避开自动滚动区（起点 y=' + Math.round(h.y) + '，落点 y=' + Math.round(targetCard.y) + '）');
+
   await p.mouse.move(h.x + h.width / 2, h.y + h.height / 2);
   await p.mouse.down();
   for (let i = 1; i <= 8; i++) {
@@ -40,9 +47,8 @@ const ok = (c, m) => { console.log((c ? '✅ ' : '❌ ') + m); if (!c) fails++; 
   await p.waitForTimeout(300);
 
   const after = await names();
-  ok(after[0] === before[2], '拖动后到了第 1 位：' + after[0]);
-  ok(after[1] === before[0] && after[2] === before[1], '其他地点相对顺序不变');
-
+  ok(after[0] === before[1], '拖动后到了第 1 位：' + after[0]);
+  ok(after[1] === before[0], '原来第 1 位退到第 2 位');
   /* ---------- 修改记录 ---------- */
   await p.locator('#menuBtn').click();
   await p.locator('#historyBtn').click();
@@ -117,6 +123,7 @@ const ok = (c, m) => { console.log((c ? '✅ ' : '❌ ') + m); if (!c) fails++; 
   /* ---------- 手机：触摸拖拽 ---------- */
   const mctx = await browser.newContext(devices['iPhone 13']);
   await stubTiles(mctx);
+  await stubWeather(mctx);
   const m = await mctx.newPage();
   m.on('pageerror', e => { console.log('PAGEERROR[mobile]', e.message); fails++; });
   await m.goto(URL, { waitUntil: 'domcontentloaded' });

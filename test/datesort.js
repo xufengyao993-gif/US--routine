@@ -1,5 +1,5 @@
 /* 新的一天日期自动 +1、日期顺延、按固定时间自动重排 */
-const { stubTiles } = require('./helpers');
+const { stubTiles, stubWeather } = require('./helpers');
 const { chromium } = require('playwright');
 const URL = 'http://127.0.0.1:8123/index.html?trip=datesort000000000000001';
 
@@ -11,6 +11,7 @@ const ok = (c, m) => { console.log((c ? '✅ ' : '❌ ') + m); if (!c) fails++; 
   // 用东八区跑，这是当初出问题的时区
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 1000 }, timezoneId: 'Asia/Shanghai' });
   await stubTiles(ctx);
+  await stubWeather(ctx);
   const p = await ctx.newPage();
   p.on('dialog', d => d.accept());
   p.on('pageerror', e => { console.log('PAGEERROR', e.message); fails++; });

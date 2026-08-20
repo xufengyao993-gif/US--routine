@@ -17,6 +17,7 @@ const SHELL = [
   './js/app-config.js',
   './js/util.js',
   './js/hours.js',
+  './js/weather.js',
   './js/model.js',
   './js/config.js',
   './js/data.js',

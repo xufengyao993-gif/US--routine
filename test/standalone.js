@@ -1,6 +1,6 @@
 /* 从主屏幕图标启动（独立存储）时的恢复流程 */
 const { chromium, devices } = require('playwright');
-const { stubTiles } = require('./helpers');
+const { stubTiles, stubWeather } = require('./helpers');
 const BASE = 'http://127.0.0.1:8123/index.html';
 
 let fails = 0;
@@ -12,6 +12,7 @@ const ok = (c, m) => { console.log((c ? '✅ ' : '❌ ') + m); if (!c) fails++; 
   /* 先在「浏览器」里配好一份行程，拿到邀请链接 */
   const browserCtx = await browser.newContext(devices['iPhone 13']);
   await stubTiles(browserCtx);
+  await stubWeather(browserCtx);
   await browserCtx.addInitScript(() => localStorage.setItem('us-routine.config.v2',
     JSON.stringify({ mapProvider: 'osm', orsApiKey: 'MY-ORS-KEY', mapsApiKey: '', firebase: {} })));
   const b1 = await browserCtx.newPage();
@@ -29,6 +30,7 @@ const ok = (c, m) => { console.log((c ? '✅ ' : '❌ ') + m); if (!c) fails++; 
   /* 模拟主屏幕图标：全新的存储 + standalone 显示模式 + 打开的是不带参数的地址 */
   const appCtx = await browser.newContext(Object.assign({}, devices['iPhone 13']));
   await stubTiles(appCtx);
+  await stubWeather(appCtx);
   const app = await appCtx.newPage();
   await app.emulateMedia({ media: 'screen', reducedMotion: null, forcedColors: null, colorScheme: null });
   await app.addInitScript(() => {
@@ -80,6 +82,7 @@ const ok = (c, m) => { console.log((c ? '✅ ' : '❌ ') + m); if (!c) fails++; 
   /* 普通浏览器里（非图标）不该弹这个 */
   const plainCtx = await browser.newContext(devices['iPhone 13']);
   await stubTiles(plainCtx);
+  await stubWeather(plainCtx);
   const plain = await plainCtx.newPage();
   await plain.goto(BASE, { waitUntil: 'domcontentloaded' });
   await plain.waitForTimeout(1200);

@@ -1,3 +1,4 @@
+const { stubTiles, stubWeather } = require('./helpers');
 const { chromium } = require('playwright');
 const fs = require('fs');
 const MOCK = fs.readFileSync(require('path').join(__dirname, 'mock-firebase.mjs'), 'utf8');
@@ -22,6 +23,8 @@ const waitFor = async (fn, ms = 6000) => {
 
   async function client(name) {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    await stubTiles(ctx);
+    await stubWeather(ctx);
     await ctx.route('https://www.gstatic.com/firebasejs/**', route =>
       route.fulfill({ status: 200, contentType: 'application/javascript', body: MOCK }));
     await ctx.addInitScript(([nick]) => {

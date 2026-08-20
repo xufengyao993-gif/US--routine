@@ -1,6 +1,6 @@
 /* 营业时间校验 + 顺序建议（只提示，改不改用户说了算） */
 const { chromium } = require('playwright');
-const { stubTiles, stubRoutes } = require('./helpers');
+const { stubTiles, stubRoutes, stubWeather } = require('./helpers');
 const PAGE = 'http://127.0.0.1:8123/index.html';
 
 let fails = 0;
@@ -10,6 +10,7 @@ const ok = (c, m) => { console.log((c ? '✅ ' : '❌ ') + m); if (!c) fails++; 
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 1100 } });
   await stubTiles(ctx);
+  await stubWeather(ctx);
   await stubRoutes(ctx);
   // Overpass：假装这个地点每天 10:00-17:00
   let overpassCalls = 0;

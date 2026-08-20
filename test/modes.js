@@ -1,6 +1,6 @@
 /* 交通方式：Uber / 租车 / 旅行团 三选一，耗时一致；老数据仍然认得 */
 const { chromium } = require('playwright');
-const { stubTiles, stubRoutes } = require('./helpers');
+const { stubTiles, stubRoutes, stubWeather } = require('./helpers');
 const PAGE = 'http://127.0.0.1:8123/index.html';
 
 let fails = 0;
@@ -10,6 +10,7 @@ const ok = (c, m) => { console.log((c ? '✅ ' : '❌ ') + m); if (!c) fails++; 
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   await stubTiles(ctx);
+  await stubWeather(ctx);
   let routeCalls = 0;
   await ctx.route('https://api.openrouteservice.org/**', r => {
     routeCalls++;

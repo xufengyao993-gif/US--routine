@@ -1,6 +1,6 @@
 /* OpenStreetMap 地图：加载、打点连线、真实路程、地点搜索 */
 const { chromium, devices } = require('playwright');
-const { stubTiles, stubRoutes, stubSearch } = require('./helpers');
+const { stubTiles, stubRoutes, stubSearch, stubWeather } = require('./helpers');
 const URL = 'http://127.0.0.1:8123/index.html?trip=osmtest00000000000000001';
 
 let fails = 0;
@@ -15,6 +15,7 @@ const waitFor = async (fn, ms = 8000) => {
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 950 } });
   await stubTiles(ctx);
+  await stubWeather(ctx);
   await stubRoutes(ctx, { minutes: 23, km: 9.4 });
   await stubSearch(ctx);
   // 假装已经填了 OpenRouteService Key
@@ -97,6 +98,7 @@ const waitFor = async (fn, ms = 8000) => {
   const tried = [];
   const ctx2 = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   await stubTiles(ctx2);
+  await stubWeather(ctx2);
   await ctx2.addInitScript(() => localStorage.setItem('us-routine.config.v2',
     JSON.stringify({ mapProvider: 'osm', orsApiKey: 'K', firebase: {} })));
   await ctx2.route('https://api.openrouteservice.org/**', r => {   // 旧域名假装已经下线

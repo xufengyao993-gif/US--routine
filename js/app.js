@@ -19,6 +19,7 @@
     schedule: null,
     presence: [],
     history: [],
+    weather: {},
     claimed: false,
     freshStorage: false,
     pendingRender: false
@@ -466,7 +467,9 @@
           type: 'date', value: day.date,
           onchange: function (e) {
             shiftDates(day, e.target.value);
-            renderDayTabs();
+            // 日期一改，星期几跟着变——营业时间的判断和天气都要重算，
+            // 只重绘顶部标签的话这两样会停在旧结论上
+            render();
           }
         })
       ]),
@@ -482,6 +485,9 @@
         })
       ])
     ]));
+
+    const weather = renderWeather(day);
+    if (weather) meta.appendChild(weather);
 
     const chips = [
       ['🚪 出门', U.toClock(sum.leaveHomeAt)],
@@ -626,6 +632,16 @@
     if (item.waitMin > 0) badges.push(U.el('span', { class: 'badge badge-wait', text: '空档 ' + U.toDuration(item.waitMin) }));
     if (item.lateBy > 0) badges.push(U.el('span', { class: 'badge badge-late', text: '迟到 ' + U.toDuration(item.lateBy) }));
     if (stop.lat == null) badges.push(U.el('span', { class: 'badge badge-muted', text: '缺坐标' }));
+
+    const w = stopWeather(day, item);
+    if (w && w.tempMax != null) {
+      const temp = w.tempMin === w.tempMax ? w.tempMax + '°' : w.tempMin + '–' + w.tempMax + '°';
+      badges.push(U.el('span', {
+        class: 'badge badge-weather' + (w.precipMax >= 50 ? ' is-wet' : ''),
+        title: w.label + (w.precipMax != null ? '，降水概率 ' + w.precipMax + '%' : ''),
+        text: w.icon + ' ' + temp + (w.precipMax >= 50 ? ' ' + w.precipMax + '%' : '')
+      }));
+    }
 
     const hours = hoursCheck(day, item);
     if (hours.status === 'closed-day' || hours.status === 'before-open' || hours.status === 'after-close') {
@@ -1107,6 +1123,93 @@
         if (view === 'map' && M.isReady()) setTimeout(M.resize, 60);
       });
     });
+  }
+
+  /* ================= 天气 ================= */
+  /** 用当天第一个有坐标的地点代表这一天的位置 */
+  function dayAnchor(day) {
+    const stops = Model.stopList(day);
+    for (let i = 0; i < stops.length; i++) {
+      if (stops[i].lat != null && stops[i].lng != null) return stops[i];
+    }
+    return null;
+  }
+
+  function weatherKey(day) {
+    const anchor = dayAnchor(day);
+    if (!anchor || !day.date) return null;
+    return Number(anchor.lat).toFixed(2) + ',' + Number(anchor.lng).toFixed(2) + '|' + day.date;
+  }
+
+  /**
+   * 拿这一天的天气。首次调用会去查，查回来再重绘一次；
+   * 结果记在 state.weather 里，所以重绘不会反复发请求。
+   */
+  function ensureWeather(day) {
+    const key = weatherKey(day);
+    if (!key) return null;
+    if (state.weather[key]) return state.weather[key];
+
+    const anchor = dayAnchor(day);
+    state.weather[key] = { status: 'loading' };
+    global.Weather.fetchDay(anchor.lat, anchor.lng, day.date).then(function (data) {
+      state.weather[key] = data ? { status: 'ok', data: data } : { status: 'none' };
+      renderGuarded();
+    });
+    return state.weather[key];
+  }
+
+  function renderWeather(day) {
+    const entry = ensureWeather(day);
+    if (!entry) return null;
+
+    if (entry.status === 'loading') {
+      return U.el('div', { class: 'weather weather-quiet', text: '正在查这天的天气…' });
+    }
+    if (entry.status === 'none') {
+      return U.el('div', { class: 'weather weather-quiet', text: '这天的天气暂时查不到' });
+    }
+
+    const w = entry.data;
+
+    if (w.mode === 'normals') {
+      return U.el('div', { class: 'weather weather-normals' }, [
+        U.el('span', { class: 'weather-icon', text: '📅' }),
+        U.el('span', { class: 'weather-main', text: w.tempMin + '–' + w.tempMax + '°C' }),
+        U.el('span', {
+          class: 'weather-note',
+          text: '往年同期平均（' + w.years.join('、') + '），不是预报' +
+            (w.sampleSize ? '；' + w.sampleSize + ' 年里有 ' + w.wetDays + ' 年这天下雨' : '')
+        })
+      ]);
+    }
+
+    // 有逐小时数据时，顺便指出当天行程时段里最可能下雨的区间
+    let rainNote = '';
+    if (w.hourly && state.schedule && state.schedule.items.length) {
+      const first = state.schedule.items[0];
+      const last = state.schedule.items[state.schedule.items.length - 1];
+      const span = global.Weather.slice(w.hourly, first.startAt, last.departAt);
+      if (span && span.rainHours.length) {
+        rainNote = global.Weather.rainWindows(span.rainHours).join('、') + ' 可能有雨';
+      }
+    }
+
+    return U.el('div', { class: 'weather' }, [
+      U.el('span', { class: 'weather-icon', text: w.icon }),
+      U.el('span', { class: 'weather-main', text: w.label + ' ' + w.tempMin + '–' + w.tempMax + '°C' }),
+      w.precipMax != null ? U.el('span', { class: 'weather-note', text: '降水 ' + w.precipMax + '%' }) : null,
+      rainNote ? U.el('span', { class: 'weather-rain', text: '☔ ' + rainNote }) : null,
+      w.mode === 'past' ? U.el('span', { class: 'weather-note', text: '（实测）' }) : null
+    ]);
+  }
+
+  /** 某个地点到访那段时间的天气，给卡片上的小角标用 */
+  function stopWeather(day, item) {
+    const key = weatherKey(day);
+    const entry = key && state.weather[key];
+    if (!entry || entry.status !== 'ok' || !entry.data.hourly) return null;
+    return global.Weather.slice(entry.data.hourly, item.startAt, item.departAt);
   }
 
   /* ================= 顺序建议（只提示，改不改你说了算） ================= */
