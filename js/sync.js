@@ -26,6 +26,15 @@
   let heartbeat = null;
   let me = null;
   let lastError = null;
+  let appMod = null;      // firebase-app 模块，重连时用来销毁旧实例
+  let appInst = null;     // 当前的 firebase app
+  let cfgCache = null;    // 上次 init 用的配置，自动重连时复用
+  let retryTimer = null;
+  let retryAt = 0;        // 下次重试的时间戳，给界面显示用
+  let attempt = 0;
+
+  // 退避节奏：10 秒、30 秒、1 分、2 分，之后固定 5 分钟一次
+  const BACKOFF = [10000, 30000, 60000, 120000, 300000];
 
   function clientId() {
     let id = localStorage.getItem(CLIENT_KEY);
@@ -65,6 +74,7 @@
   function isOnline() { return mode === 'online'; }
   function getMe() { return me; }
   function getError() { return lastError; }
+  function getRetryAt() { return mode === 'error' ? retryAt : 0; }
 
   function setMode(next) {
     if (mode === next) return;
@@ -92,22 +102,76 @@
   function init(opts) {
     handlers = opts || {};
     tripId = opts.tripId;
+    cfgCache = opts.config;
     me = { id: clientId(), name: myName(), color: colorFor(clientId()) };
 
-    const cfg = opts.config;
+    // 页面重新回到前台时，如果之前连接失败了就立刻再试一次。
+    // 主屏幕图标打开的 App 尤其需要：从后台切回来就自己恢复，不用杀进程重开。
+    if (!global.__syncVisibilityBound) {
+      global.__syncVisibilityBound = true;
+      document.addEventListener('visibilitychange', function () {
+        if (!document.hidden && mode === 'error') retry();
+      });
+      global.addEventListener('online', function () {
+        if (mode === 'error') retry();
+      });
+    }
+
+    return connect();
+  }
+
+  /** 丢掉上一次的连接，好让下一次 initializeApp 不撞名字 */
+  function teardown() {
+    if (heartbeat) { clearInterval(heartbeat); heartbeat = null; }
+    presenceRef = null;
+    if (appMod && appInst) {
+      try { appMod.deleteApp(appInst); } catch (e) { /* 已经没了就算了 */ }
+    }
+    appInst = null;
+    fb = null;
+  }
+
+  /** 排一次自动重试；连不上就按 BACKOFF 越退越慢 */
+  function scheduleRetry() {
+    if (retryTimer) clearTimeout(retryTimer);
+    const wait = BACKOFF[Math.min(attempt, BACKOFF.length - 1)];
+    attempt++;
+    retryAt = Date.now() + wait;
+    retryTimer = setTimeout(function () {
+      retryTimer = null;
+      connect();
+    }, wait);
+    if (handlers.onStatus) handlers.onStatus(mode, lastError);
+  }
+
+  /** 立刻重连（界面上的「重试」按钮，以及回到前台 / 网络恢复时调） */
+  function retry() {
+    if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+    attempt = 0;
+    retryAt = 0;
+    return connect();
+  }
+
+  function connect() {
+    const cfg = cfgCache;
     if (!cfg || !cfg.apiKey || !cfg.databaseURL || !tripId) {
       setMode('local');
       return Promise.resolve('local');
     }
 
+    teardown();
+    lastError = null;
+    mode = null;            // 强制触发一次 setMode，重试时界面也要动
     setMode('connecting');
     return Promise.all([
       import(SDK + 'firebase-app.js'),
       import(SDK + 'firebase-auth.js'),
       import(SDK + 'firebase-database.js')
     ]).then(function (mods) {
-      const appMod = mods[0], authMod = mods[1], dbMod = mods[2];
-      const app = appMod.initializeApp(cfg);
+      const authMod = mods[1], dbMod = mods[2];
+      appMod = mods[0];
+      const app = appMod.initializeApp(cfg, 'sync-' + Date.now());
+      appInst = app;
       const auth = authMod.getAuth(app);
       const db = dbMod.getDatabase(app);
 
@@ -124,6 +188,9 @@
         // 连接状态
         dbMod.onValue(dbMod.ref(db, '.info/connected'), function (snap) {
           if (snap.val() === true) {
+            attempt = 0;
+            retryAt = 0;
+            if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
             setMode('online');
             armPresence(dbMod, db);
           } else {
@@ -138,6 +205,7 @@
         }, function (err) {
           lastError = err.message;
           setMode('error');
+          scheduleRetry();
         });
 
         // 修改记录
@@ -167,6 +235,7 @@
       console.error('同步初始化失败', err);
       lastError = err.message;
       setMode('error');
+      scheduleRetry();
       return 'error';
     });
   }
@@ -238,6 +307,8 @@
 
   global.Sync = {
     init: init,
+    retry: retry,
+    getRetryAt: getRetryAt,
     pushHistory: pushHistory,
     trimHistory: trimHistory,
     push: push,

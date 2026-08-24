@@ -21,6 +21,7 @@
     history: [],
     weather: {},
     claimed: false,
+    remoteEmpty: false,
     freshStorage: false,
     pendingRender: false
   };
@@ -112,18 +113,28 @@
   function onRemoteTrip(remote) {
     if (!remote || !remote.days) {
       // 云端还没有这份行程：本人是第一个进来的，把本地这份传上去
-      if (Sync.isOnline() && !state.claimed) {
-        state.claimed = true;
-        Sync.replaceAll(state.trip);
-      }
+      state.remoteEmpty = true;
+      claimIfNeeded();
       return;
     }
     state.claimed = true;
+    state.remoteEmpty = false;
     state.trip = Model.migrate(remote);
     S.saveTrip(state.trip, state.tripId);
     ensureActiveDay();
     renderGuarded();
     if (M.isReady()) refreshLegs(true);
+  }
+
+  /**
+   * 云端是空的、而且确实连上了，才把本地这份占位上去。
+   * 这两个条件谁先谁后都有可能（读到「空」有时比连接状态更早到），
+   * 所以两边都调一次，用 claimed 保证只传一遍。
+   */
+  function claimIfNeeded() {
+    if (!state.remoteEmpty || state.claimed || !Sync.isOnline()) return;
+    state.claimed = true;
+    Sync.replaceAll(state.trip);
   }
 
   function onPresence(list) {
@@ -143,11 +154,40 @@
       error: { text: '⚠️ 协作服务连接失败' + (error ? '（' + error + '）' : '') + '，暂时只在本机保存', cls: 'is-warn' }
     };
     const info = map[mode];
+    bar.textContent = '';
     if (!info) {
       bar.hidden = true;
-      if (mode === 'online') toast('已连上协作服务，改动会实时同步');
+      if (mode === 'online') {
+        toast('已连上协作服务，改动会实时同步');
+        claimIfNeeded();
+      }
     } else {
-      bar.textContent = info.text;
+      const line = document.createElement('span');
+      line.textContent = info.text;
+      bar.appendChild(line);
+
+      // 连不上的时候自己会一直重试，同时给一个手动的入口：
+      // 服务端刚恢复时不用等下一轮退避，点一下就重连。
+      if (mode === 'error') {
+        const wait = Sync.getRetryAt ? Sync.getRetryAt() : 0;
+        if (wait) {
+          const sec = Math.max(1, Math.round((wait - Date.now()) / 1000));
+          const hint = document.createElement('span');
+          hint.className = 'sync-bar-hint';
+          hint.textContent = '· ' + (sec >= 60 ? Math.round(sec / 60) + ' 分钟' : sec + ' 秒') + '后自动重试';
+          bar.appendChild(hint);
+        }
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'sync-bar-btn';
+        btn.textContent = '🔄 立即重试';
+        btn.addEventListener('click', function () {
+          btn.disabled = true;
+          Sync.retry();
+        });
+        bar.appendChild(btn);
+      }
+
       bar.className = 'sync-bar ' + info.cls;
       bar.hidden = false;
     }

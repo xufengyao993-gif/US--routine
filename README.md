@@ -231,6 +231,7 @@ node test/weather.js       # 天气：预报、逐小时角标、往年同期、
 node test/standalone.js    # 主屏幕图标（独立存储）的恢复流程
 node test/fakedb.js &      # 内存版实时数据库
 node test/collab.js        # 两个客户端同时改，验证实时同步与不覆盖
+node test/reconnect.js     # 协作服务断了之后的自动重试与「立即重试」
 ```
 
 ## 费用

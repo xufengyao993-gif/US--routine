@@ -333,6 +333,18 @@ html, body {
 }
 .sync-bar.is-warn { background: #fffbeb; color: #b45309; }
 .sync-bar.is-info { background: #eff6ff; color: #1d4ed8; }
+.sync-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.sync-bar-hint { opacity: .75; }
+.sync-bar-btn {
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.sync-bar-btn:disabled { opacity: .5; cursor: default; }
 
 .badge-editing { background: #f5f3ff; }
 .stop.is-editing { border-style: dashed; }

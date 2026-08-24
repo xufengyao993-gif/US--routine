@@ -3,7 +3,8 @@ function call(op, path, value) {
   return fetch(API, { method: 'POST', body: JSON.stringify({ op, path, value }) })
     .then(r => r.json()).then(j => j.value);
 }
-export function initializeApp() { return {}; }
+export function initializeApp(cfg, name) { return { name: name || '[DEFAULT]' }; }
+export function deleteApp() { return Promise.resolve(); }
 export function getAuth() { return {}; }
 export function signInAnonymously() { return Promise.resolve({ user: { uid: 'u' + Math.random().toString(36).slice(2) } }); }
 export function getDatabase() { return {}; }
