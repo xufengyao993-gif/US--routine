@@ -440,4 +440,84 @@ const park = OSM.toPlace({ properties: { name: 'Dolores Park', osm_key: 'leisure
   geometry: { coordinates: [-122.42, 37.75] } });
 ok(park.types.indexOf('park') >= 0, '公园识别成户外');
 
+/* --- 14. 休息时间不算游玩 --- */
+ok(Util.isRest({ category: 'hotel' }) === true, '住宿默认算休息');
+ok(Util.isRest({ category: 'attraction' }) === false, '景点默认算游玩');
+ok(Util.isRest({ category: 'hotel', rest: false }) === false, '住宿也能手动标成游玩');
+ok(Util.isRest({ category: 'transport', rest: true }) === true, '候机可以手动标成休息');
+ok(Util.isRest(null) === false, '空值不崩');
+
+const restDay = Schedule.computeDay({
+  startTime: '08:00',
+  stops: [
+    { id: 'a', name: '民宿', category: 'hotel', stayMin: 30, lat: 37.77, lng: -122.42 },
+    { id: 'b', name: '金门大桥', category: 'attraction', stayMin: 90, lat: 37.81, lng: -122.47 },
+    { id: 'c', name: '回民宿睡觉', category: 'hotel', stayMin: 600, lat: 37.77, lng: -122.42 }
+  ]
+});
+ok(restDay.summary.totalStay === 90, '游玩只算景点那 90 分钟：' + restDay.summary.totalStay);
+ok(restDay.summary.totalRest === 630, '住宿的 630 分钟归到休息：' + restDay.summary.totalRest);
+ok(restDay.items[2].isRest === true, '过夜那条标了 isRest');
+ok(restDay.items[1].isRest === false, '景点那条没被标成休息');
+
+/* --- 15. 手填路上时间 --- */
+const flight = Schedule.computeDay({
+  startTime: '20:00',
+  stops: [
+    { id: 'a', name: 'SFO', category: 'transport', stayMin: 0, fixedStart: '23:40', lat: 37.62, lng: -122.38 },
+    { id: 'b', name: 'MNL', category: 'transport', stayMin: 0, travelMin: 885, lat: 14.51, lng: 121.02 }
+  ]
+});
+ok(flight.items[1].leg.minutes === 885, '路上时间用自己填的 885 分钟');
+ok(flight.items[1].leg.manual === true, '标记为手填');
+ok(flight.items[1].leg.estimated === false, '手填的不再标「估算」');
+ok(flight.items[1].arriveAt === 23 * 60 + 40 + 885, '到达时间＝起飞＋飞行时长');
+const autoLeg = Schedule.computeDay({
+  startTime: '20:00',
+  stops: [
+    { id: 'a', name: 'SFO', category: 'transport', stayMin: 0, lat: 37.62, lng: -122.38 },
+    { id: 'b', name: 'MNL', category: 'transport', stayMin: 0, lat: 14.51, lng: 121.02 }
+  ]
+});
+ok(autoLeg.items[1].leg.estimated === true, '不填就还是按估算走');
+ok(autoLeg.items[1].leg.minutes !== 885, '估算值跟手填值不是一回事');
+ok(Schedule.computeDay({ startTime: '09:00', stops: [
+  { id: 'a', stayMin: 0, lat: 1, lng: 1 }, { id: 'b', stayMin: 0, travelMin: 0, lat: 2, lng: 2 }
+] }).items[1].leg.minutes === 0, '填 0 分钟当真是 0，不会被当成没填');
+
+/* --- 16. 时区换算 --- */
+ok(Util.tzOffsetAt('Asia/Shanghai', new Date('2026-09-26T00:00:00Z')) === 480, '上海 +8 小时');
+ok(Util.tzOffsetAt('America/Los_Angeles', new Date('2026-09-26T00:00:00Z')) === -420, '洛杉矶夏令时 -7 小时');
+ok(Util.tzOffsetAt('America/Los_Angeles', new Date('2026-12-26T00:00:00Z')) === -480, '洛杉矶冬季 -8 小时');
+ok(Util.tzOffsetAt('Nowhere/Nope', new Date()) === null, '认不出的时区返回 null');
+ok(Util.isValidTz('Asia/Manila') === true && Util.isValidTz('随便写的') === false, 'isValidTz 能挡住乱填');
+
+// 9/29 洛杉矶 23:40 起飞，飞 14 小时 45 分
+const arriveMin = 23 * 60 + 40 + 885;
+const mnl = Util.localAt('2026-09-29', arriveMin, 'America/Los_Angeles', 'Asia/Manila');
+ok(mnl.minutes === 5 * 60 + 25, '马尼拉当地 05:25：' + Util.toClock(mnl.minutes));
+ok(mnl.dayDelta === 2, '当地已经是两天后：' + mnl.dayDelta);
+ok(Util.localClock(mnl) === '+2 天 05:25', 'localClock 写法：' + Util.localClock(mnl));
+ok(Util.localClock({ minutes: 620, dayDelta: 0 }) === '10:20', '同一天不加前缀');
+ok(Util.localClock({ minutes: 620, dayDelta: 1 }) === '次日 10:20', '次日写「次日」');
+ok(Util.localClock({ minutes: 620, dayDelta: -1 }) === '前一天 10:20', '倒退一天写「前一天」');
+ok(Util.localAt('2026-09-29', 600, 'Asia/Manila', 'Asia/Manila') === null, '同时区不显示当地时间');
+ok(Util.localAt('2026-09-29', 600, null, 'Asia/Manila') === null, '没设基准时区就不换算');
+ok(Util.localAt('2026-09-29', 600, 'America/Los_Angeles', 'Nowhere/Nope') === null, '目标时区无效返回 null');
+
+// 反过来：马尼拉飞回旧金山，落地当地时间比起飞还早
+const back = Util.localAt('2026-10-05', 14 * 60 + 30 + 720, 'Asia/Manila', 'America/Los_Angeles');
+ok(back.dayDelta === 0 && back.minutes === 11 * 60 + 30, '往东飞落地还是当天上午：' + Util.localClock(back));
+
+ok(Util.daysBetween('2026-09-29', '2026-10-01') === 2, '跨月算天数');
+ok(Util.daysBetween('2026-12-31', '2027-01-01') === 1, '跨年算天数');
+ok(Util.tzShort('America/Los_Angeles') === 'Los Angeles', '时区简写去掉大区和下划线');
+ok(Util.tzShort('') === '', '空时区不崩');
+
+// 夏令时切换那天：洛杉矶 2026-11-01 凌晨 2 点回拨一小时
+const dstBefore = Util.localAt('2026-11-01', 60, 'America/Los_Angeles', 'UTC');
+const dstAfter = Util.localAt('2026-11-01', 180, 'America/Los_Angeles', 'UTC');
+ok(dstBefore.minutes === 8 * 60 && dstAfter.minutes === 11 * 60,
+  '夏令时切换当天两侧都换算正确：' + Util.toClock(dstBefore.minutes) + ' / ' + Util.toClock(dstAfter.minutes));
+
 console.log(process.exitCode ? '有断言失败' : `全部 ${n} 条断言通过 ✅`);

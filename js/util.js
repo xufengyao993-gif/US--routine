@@ -72,6 +72,123 @@
     return h + ' 小时 ' + m + ' 分';
   }
 
+  /* ================= 时区 =================
+   * 一天的时间轴始终按「这一天的基准时区」推算（通常是出发地）。
+   * 某个地点在别的时区时，只是额外标一行当地时刻，不改变时间轴本身——
+   * 否则跨时区那天的先后顺序会变得没法读。
+   */
+
+  /** 某时区在某一瞬间的偏移（分钟，东为正）；时区名不认识返回 null */
+  function tzOffsetAt(tz, instant) {
+    if (!tz) return null;
+    try {
+      const dtf = new Intl.DateTimeFormat('en-US', {
+        timeZone: tz, hour12: false,
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit'
+      });
+      const p = {};
+      dtf.formatToParts(instant).forEach(function (x) { p[x.type] = x.value; });
+      // 把该时区读出来的「墙上时间」当成 UTC，与真正的 UTC 之差就是偏移
+      const asUTC = Date.UTC(+p.year, +p.month - 1, +p.day, (+p.hour) % 24, +p.minute, +p.second);
+      return Math.round((asUTC - instant.getTime()) / 60000);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function isValidTz(tz) {
+    if (!tz) return false;
+    return tzOffsetAt(tz, new Date()) != null;
+  }
+
+  /**
+   * 「某时区里 dateISO 这天的第 minutes 分钟」-> 绝对时刻。
+   * 偏移本身取决于时刻（夏令时），所以迭代两次让它收敛。
+   * minutes 允许超过 1440，表示跨到次日。
+   */
+  function wallToInstant(dateISO, minutes, tz) {
+    const parts = String(dateISO || '').split('-');
+    if (parts.length !== 3) return null;
+    const base = Date.UTC(+parts[0], +parts[1] - 1, +parts[2], 0, Math.round(minutes || 0));
+    if (isNaN(base)) return null;
+    if (!tz) return new Date(base);
+    let guess = new Date(base);
+    for (let i = 0; i < 2; i++) {
+      const off = tzOffsetAt(tz, guess);
+      if (off == null) return new Date(base);
+      guess = new Date(base - off * 60000);
+    }
+    return guess;
+  }
+
+  /** 绝对时刻 -> 某时区的墙上时间 {date:'YYYY-MM-DD', minutes} */
+  function instantToWall(instant, tz) {
+    const opts = { hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' };
+    if (tz) opts.timeZone = tz;
+    let p = {};
+    try {
+      new Intl.DateTimeFormat('en-US', opts).formatToParts(instant).forEach(function (x) { p[x.type] = x.value; });
+    } catch (e) {
+      return null;
+    }
+    return { date: p.year + '-' + p.month + '-' + p.day, minutes: ((+p.hour) % 24) * 60 + (+p.minute) };
+  }
+
+  /** 两个 'YYYY-MM-DD' 相差几天（b - a） */
+  function daysBetween(a, b) {
+    const pa = String(a || '').split('-');
+    const pb = String(b || '').split('-');
+    if (pa.length !== 3 || pb.length !== 3) return 0;
+    const ta = Date.UTC(+pa[0], +pa[1] - 1, +pa[2]);
+    const tb = Date.UTC(+pb[0], +pb[1] - 1, +pb[2]);
+    return Math.round((tb - ta) / 86400000);
+  }
+
+  /**
+   * 基准时区里的时刻 -> 目标时区的当地时刻。
+   * 返回 {minutes, dayDelta}，dayDelta 是相对基准那天的日期差（+1 = 当地已是次日）。
+   * 两个时区相同、缺参数、时区名不认识时返回 null（界面据此不显示当地时间）。
+   */
+  function localAt(dateISO, minutes, baseTz, targetTz) {
+    if (!baseTz || !targetTz || baseTz === targetTz || minutes == null) return null;
+    const inst = wallToInstant(dateISO, minutes, baseTz);
+    if (!inst || isNaN(inst.getTime())) return null;
+    const wall = instantToWall(inst, targetTz);
+    if (!wall) return null;
+    return { minutes: wall.minutes, dayDelta: daysBetween(dateISO, wall.date) };
+  }
+
+  /** 当地时刻的展示写法：'14:40'、'次日 05:20'、'前一天 23:10' */
+  function localClock(local) {
+    if (!local) return '';
+    const hhmm = toClock(((local.minutes % 1440) + 1440) % 1440);
+    if (local.dayDelta > 1) return '+' + local.dayDelta + ' 天 ' + hhmm;
+    if (local.dayDelta === 1) return '次日 ' + hhmm;
+    if (local.dayDelta === -1) return '前一天 ' + hhmm;
+    if (local.dayDelta < -1) return local.dayDelta + ' 天 ' + hhmm;
+    return hhmm;
+  }
+
+  /** 时区名的简短写法：Asia/Manila -> Manila */
+  function tzShort(tz) {
+    if (!tz) return '';
+    const parts = String(tz).split('/');
+    return parts[parts.length - 1].replace(/_/g, ' ');
+  }
+
+  /**
+   * 这个地点算不算「在外面玩」。
+   * 住宿默认算休息（睡觉不是游玩），其余默认算游玩；
+   * 每个地点都能单独覆盖（比如机场候机三小时，也不该算游玩）。
+   */
+  function isRest(stop) {
+    if (!stop) return false;
+    if (stop.rest === true) return true;
+    if (stop.rest === false) return false;
+    return stop.category === 'hotel';
+  }
+
   /** 两点球面距离，单位 km */
   function haversineKm(a, b) {
     if (!a || !b || a.lat == null || b.lat == null) return null;
@@ -196,6 +313,15 @@
 
   global.Util = {
     CATEGORIES: CATEGORIES,
+    tzOffsetAt: tzOffsetAt,
+    isValidTz: isValidTz,
+    wallToInstant: wallToInstant,
+    instantToWall: instantToWall,
+    daysBetween: daysBetween,
+    localAt: localAt,
+    localClock: localClock,
+    tzShort: tzShort,
+    isRest: isRest,
     MODES: MODES,
     DEFAULT_MODE: DEFAULT_MODE,
     normalizeMode: normalizeMode,

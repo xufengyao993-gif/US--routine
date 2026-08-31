@@ -36,6 +36,7 @@
     state.history = S.loadHistory(state.tripId);
     ensureActiveDay();
 
+    fillTzList();
     bindControls();
     bindMobileTabs();
     registerServiceWorker();
@@ -523,6 +524,19 @@
             render();
           }
         })
+      ]),
+      U.el('label', {}, [
+        U.el('span', { text: '时区（这天按哪儿的时间）' }),
+        U.el('input', {
+          type: 'text', list: 'tzList', value: day.tz || '', placeholder: '例 America/Los_Angeles',
+          onchange: function (e) {
+            const val = (e.target.value || '').trim();
+            if (val && !U.isValidTz(val)) { toast('认不出这个时区，请从下拉里选'); e.target.value = day.tz || ''; return; }
+            const p = {}; p[dayPath(day.id) + '/tz'] = val || null;
+            change(p, { action: 'day', summary: val ? '把「' + day.title + '」的时区设为 ' + val : '取消了「' + day.title + '」的时区' });
+            render();
+          }
+        })
       ])
     ]));
 
@@ -537,6 +551,8 @@
       ['🍜 吃饭', sum.foodCount + ' 顿'],
       ['🏁 结束', U.toClock(sum.dayEndAt)]
     ];
+    // 住宿和自己标了休息的时段单列，不混进「游玩」
+    if (sum.totalRest > 0) chips.splice(2, 0, ['😴 休息', U.toDuration(sum.totalRest)]);
     meta.appendChild(U.el('div', { class: 'summary' }, chips.map(function (c) {
       return U.el('div', { class: 'summary-chip' }, [
         U.el('span', { class: 'summary-label', text: c[0] }),
@@ -611,6 +627,22 @@
     tl.scrollTop = scrollTop;
   }
 
+  /** 起降两头时区不同的那一段，补一行当地时刻 */
+  function legLocalLine(day, item, prevItem) {
+    const base = day.tz;
+    if (!base || !day.date) return null;
+    const fromTz = prevItem && prevItem.stop.tz ? prevItem.stop.tz : base;
+    const toTz = item.stop.tz || base;
+    if (fromTz === toTz) return null;
+    const dep = U.localAt(day.date, item.leg.departAt, base, fromTz);
+    const arr = U.localAt(day.date, item.leg.arriveAt, base, toTz);
+    const bits = [];
+    if (dep) bits.push(U.tzShort(fromTz) + '当地 ' + U.localClock(dep) + ' 出发');
+    else bits.push(U.tzShort(fromTz) + '当地 ' + U.toClock(item.leg.departAt) + ' 出发');
+    if (arr) bits.push(U.tzShort(toTz) + '当地 ' + U.localClock(arr) + ' 到达');
+    return U.el('div', { class: 'leg-local', text: '🌐 ' + bits.join('，') });
+  }
+
   function renderLeg(day, item, prevItem) {
     const leg = item.leg;
     const mode = U.modeInfo(leg.mode);
@@ -622,6 +654,7 @@
       U.el('span', { class: 'leg-mode', text: mode.icon + ' ' + mode.label }),
       U.el('span', { class: 'leg-dur', text: U.toDuration(leg.minutes) }),
       leg.km != null ? U.el('span', { class: 'leg-km', text: leg.km + ' km' }) : null,
+      leg.manual ? U.el('span', { class: 'badge badge-muted', title: '这段的时长是你自己填的，不按地图算', text: '手填' }) : null,
       leg.estimated ? U.el('span', { class: 'badge badge-muted', title: '未接入 Directions API 或该段抓取失败，按直线距离估算', text: '估算' }) : null
     ]));
 
@@ -631,6 +664,10 @@
       U.el('strong', { text: U.toClock(leg.arriveAt) }),
       U.el('span', { text: ' 到达' })
     ]));
+
+    // 跨时区那一段：把两头的当地时刻也写出来，否则「次日 14:25 到达」根本不知道对应当地几点
+    const localLine = legLocalLine(day, item, prevItem);
+    if (localLine) rows.push(localLine);
 
     if (leg.latestDeparture != null) {
       rows.push(U.el('div', { class: 'leg-deadline' + (late ? ' is-late' : '') }, [
@@ -653,12 +690,55 @@
     return U.el('div', { class: 'leg' + (isFood ? ' leg-food' : '') + (late ? ' leg-late' : '') }, rows);
   }
 
-  /** 这个地点到访时人家开不开门 */
+  /**
+   * 这个地点到访时人家开不开门。
+   * 跨时区的地点要按「它自己那边的时间」判断——马尼拉的店按马尼拉时间开门，
+   * 拿旧金山的钟去比会整整差 15 小时，星期几也可能是错的。
+   */
   function hoursCheck(day, item) {
     if (!item.stop.hours) return { status: 'unknown' };
-    const weekday = global.Hours.weekdayOf(day.date);
+    const local = stopLocal(day, item);
+    let date = day.date;
+    let start = item.startAt;
+    let end = item.departAt;
+    if (local && local.start) {
+      date = U.addDays(day.date, local.start.dayDelta);
+      start = local.start.minutes;
+      end = local.depart ? local.start.minutes + Math.max(0, item.departAt - item.startAt) : start;
+    }
+    const weekday = global.Hours.weekdayOf(date);
     if (weekday == null) return { status: 'unknown' };
-    return global.Hours.check(item.stop.hours, weekday, item.startAt, item.departAt);
+    return global.Hours.check(item.stop.hours, weekday, start, end);
+  }
+
+  /**
+   * 这个地点的当地时刻。
+   * 时间轴本身始终按当天的基准时区走（改成混着走就没法读先后了），
+   * 跨时区的地点只是额外标一行「当地几点」。
+   */
+  function localTimeLine(day, item) {
+    const local = stopLocal(day, item);
+    if (!local) return null;
+    const label = U.tzShort(item.stop.tz);
+    const from = U.localClock(local.start);
+    const showRange = local.depart && local.depart.minutes !== local.start.minutes;
+    return U.el('div', { class: 'stop-local' }, [
+      U.el('span', { text: '🌐 ' + label + '当地 ' + from + (showRange ? ' – ' + U.localClock(local.depart) : '') })
+    ]);
+  }
+
+  /** 某个地点在它自己时区里的到达 / 开始 / 离开时刻；不跨时区返回 null */
+  function stopLocal(day, item) {
+    const tz = item.stop.tz;
+    const base = day.tz;
+    if (!tz || !base || tz === base || !day.date) return null;
+    const start = U.localAt(day.date, item.startAt, base, tz);
+    if (!start) return null;
+    return {
+      arrive: item.arriveAt == null ? null : U.localAt(day.date, item.arriveAt, base, tz),
+      start: start,
+      depart: U.localAt(day.date, item.departAt, base, tz)
+    };
   }
 
   function renderStopCard(day, item, i, total) {
@@ -668,6 +748,7 @@
     const editor = state.presence.filter(function (p) { return p.editing === stop.id; })[0];
 
     const badges = [];
+    if (item.isRest) badges.push(U.el('span', { class: 'badge badge-rest', text: '😴 休息，不算游玩' }));
     if (item.isFixed) badges.push(U.el('span', { class: 'badge badge-fixed', text: '固定 ' + stop.fixedStart }));
     if (item.waitMin > 0) badges.push(U.el('span', { class: 'badge badge-wait', text: '空档 ' + U.toDuration(item.waitMin) }));
     if (item.lateBy > 0) badges.push(U.el('span', { class: 'badge badge-late', text: '迟到 ' + U.toDuration(item.lateBy) }));
@@ -719,6 +800,7 @@
           U.el('span', { class: 'stop-stay', text: '停留 ' + U.toDuration(item.stayMin) }),
           stop.address ? U.el('span', { class: 'stop-addr', text: ' · ' + stop.address }) : null
         ]),
+        localTimeLine(day, item),
         badges.length ? U.el('div', { class: 'stop-badges' }, badges) : null,
         stop.notes ? U.el('div', { class: 'stop-notes', text: '📝 ' + stop.notes }) : null,
         U.el('div', { class: 'stop-actions' }, [
@@ -738,6 +820,13 @@
     // 新的一天默认接在前一天后面
     const prev = days[days.length - 1];
     if (prev && prev.date) day.date = U.addDays(prev.date, 1);
+    // 时区跟着前一天走；前一天最后落脚的地点若在别的时区（比如飞过去了），按那个算
+    if (prev) {
+      const prevStops = Model.stopList(prev);
+      const lastTz = prevStops.length ? prevStops[prevStops.length - 1].tz : null;
+      const inherited = lastTz || prev.tz;
+      if (inherited) day.tz = inherited;
+    }
     state.activeDayId = day.id;
     const p = {}; p[dayPath(day.id)] = day;
     change(p, { action: 'day-add', summary: '新增了一天：' + day.title });
@@ -899,6 +988,67 @@
   }
 
   /** 边填边告诉你这串写法系统看不看得懂 */
+  /** 时区候选：优先用浏览器自带的完整 IANA 列表，老浏览器退回一份常用的 */
+  let tzListFilled = false;
+  function fillTzList() {
+    if (tzListFilled) return;
+    tzListFilled = true;
+    let zones = [];
+    try {
+      if (typeof Intl.supportedValuesOf === 'function') zones = Intl.supportedValuesOf('timeZone');
+    } catch (e) { /* 老浏览器没有，往下走 */ }
+    if (!zones.length) {
+      zones = [
+        'America/Los_Angeles', 'America/Denver', 'America/Phoenix', 'America/Chicago', 'America/New_York',
+        'America/Anchorage', 'Pacific/Honolulu', 'Asia/Shanghai', 'Asia/Hong_Kong', 'Asia/Taipei',
+        'Asia/Manila', 'Asia/Singapore', 'Asia/Tokyo', 'Asia/Seoul', 'Asia/Bangkok', 'Asia/Dubai',
+        'Europe/London', 'Europe/Paris', 'Australia/Sydney', 'UTC'
+      ];
+    }
+    const list = $('tzList');
+    list.innerHTML = '';
+    zones.forEach(function (z) { list.appendChild(U.el('option', { value: z })); });
+  }
+
+  function updateTzStatus() {
+    const note = $('tz-status');
+    const val = $('f-tz').value.trim();
+    const day = Model.dayList(state.trip).filter(function (d) { return editing && d.id === editing.dayId; })[0];
+    const base = day && day.tz;
+    if (!val) {
+      note.textContent = base ? '· 留空＝跟这天一样（' + U.tzShort(base) + '）' : '';
+      note.className = 'field-note';
+      return;
+    }
+    if (!U.isValidTz(val)) {
+      note.textContent = '· 认不出这个时区，从下拉里选';
+      note.className = 'field-note is-warn';
+      return;
+    }
+    if (!base) {
+      note.textContent = '· 这天还没设基准时区，设了才会显示当地时间';
+      note.className = 'field-note is-warn';
+      return;
+    }
+    if (val === base) {
+      note.textContent = '· 和这天的基准时区一样，不会额外标';
+      note.className = 'field-note';
+      return;
+    }
+    const day0 = day.date || U.toISODate(new Date());
+    const sample = U.localAt(day0, 12 * 60, base, val);
+    note.textContent = sample ? '· 基准 12:00 时，这里是 ' + U.localClock(sample) : '';
+    note.className = 'field-note';
+  }
+
+  function updateRestHint() {
+    const hint = $('restHint');
+    const isHotel = $('f-category').value === 'hotel';
+    hint.textContent = isHotel
+      ? '（住宿默认就是休息，睡觉不算游玩）'
+      : '（比如在机场候机三小时，也不该算成游玩）';
+  }
+
   function updateHoursStatus() {
     const note = $('hours-status');
     const text = $('f-hours').value.trim();
@@ -937,9 +1087,16 @@
     $('f-stay').value = s.stayMin;
     $('f-mode').value = U.normalizeMode(s.arriveMode);
     $('f-fixed').value = s.fixedStart || '';
+    $('f-travel').value = s.travelMin == null ? '' : s.travelMin;
+    $('f-tz').value = s.tz || '';
+    // 没单独设过就跟着分类走（住宿默认算休息），设过就按设的来
+    $('f-rest').checked = U.isRest(s);
     $('f-hours').value = s.hours || '';
     $('f-notes').value = s.notes || '';
+    fillTzList();
     updateHoursStatus();
+    updateTzStatus();
+    updateRestHint();
     attachDialogAutocomplete();
     if (stop) Sync.setEditing(stop.id);
     $('stopDialog').showModal();
@@ -967,6 +1124,10 @@
       stayMin: Math.max(0, parseInt($('f-stay').value, 10) || 0),
       arriveMode: $('f-mode').value,
       fixedStart: $('f-fixed').value || '',
+      travelMin: $('f-travel').value === '' ? null : Math.max(0, parseInt($('f-travel').value, 10) || 0),
+      tz: $('f-tz').value.trim() || null,
+      // 勾选状态跟分类默认值一致时就不存这个字段，让它继续跟着分类走
+      rest: $('f-rest').checked === ($('f-category').value === 'hotel') ? null : $('f-rest').checked,
       hours: $('f-hours').value.trim(),
       notes: $('f-notes').value.trim(),
       updatedBy: Sync.myName(),
@@ -1022,6 +1183,11 @@
       parts.push(after.fixedStart ? '固定时间设为 ' + after.fixedStart : '取消了固定时间');
     }
     if ((before.category || '') !== (after.category || '')) parts.push('类型改成' + (U.CATEGORIES[after.category] || {}).label);
+    if ((before.travelMin == null ? null : before.travelMin) !== (after.travelMin == null ? null : after.travelMin)) {
+      parts.push(after.travelMin == null ? '路上时间改回按地图算' : '路上时间自己填成 ' + U.toDuration(after.travelMin));
+    }
+    if ((before.tz || '') !== (after.tz || '')) parts.push(after.tz ? '时区设为 ' + after.tz : '取消了单独的时区');
+    if (U.isRest(before) !== U.isRest(after)) parts.push(U.isRest(after) ? '标成休息（不算游玩）' : '标成游玩时间');
     if ((before.hours || '') !== (after.hours || '')) parts.push('改了营业时间');
     if ((before.notes || '') !== (after.notes || '')) parts.push('改了备注');
     if ((before.lat !== after.lat) || (before.lng !== after.lng)) parts.push('换了位置');
@@ -1042,6 +1208,13 @@
     });
     $('stopForm').addEventListener('submit', saveStopDialog);
     $('f-hours').addEventListener('input', updateHoursStatus);
+    $('f-tz').addEventListener('input', updateTzStatus);
+    $('f-category').addEventListener('change', function () {
+      // 换分类时，没单独设过的跟着新分类的默认值走
+      const s = editing && editing.snapshot;
+      if (!s || s.rest == null) $('f-rest').checked = $('f-category').value === 'hotel';
+      updateRestHint();
+    });
     $('stopCancel').addEventListener('click', closeStopDialog);
     $('stopDialog').addEventListener('close', function () { Sync.setEditing(null); });
 
@@ -1519,7 +1692,8 @@
     const day = currentDay();
     if (!day || !state.schedule) return;
     const lines = [];
-    lines.push('【' + U.formatDate(day.date) + ' ' + day.title + '】');
+    lines.push('【' + U.formatDate(day.date) + ' ' + day.title + '】' +
+      (day.tz ? '（时间按 ' + U.tzShort(day.tz) + '）' : ''));
     state.schedule.items.forEach(function (item, i) {
       const cat = U.CATEGORIES[item.stop.category] || U.CATEGORIES.other;
       if (item.leg) {
@@ -1527,12 +1701,19 @@
         lines.push('   ↓ ' + U.toClock(item.leg.departAt) + ' 出门，' + mode.label + ' ' +
           U.toDuration(item.leg.minutes) + (item.leg.km != null ? '（' + item.leg.km + ' km）' : ''));
       }
+      const local = stopLocal(day, item);
       lines.push((i + 1) + '. ' + U.toClock(item.startAt) + '–' + U.toClock(item.departAt) + ' ' +
         cat.icon + ' ' + item.stop.name + '（停留 ' + U.toDuration(item.stayMin) + '）' +
         (item.lateBy > 0 ? ' ⚠️赶不上预约' : ''));
+      if (local) {
+        lines.push('     🌐 ' + U.tzShort(item.stop.tz) + '当地 ' +
+          U.localClock(local.start) + '–' + U.localClock(local.depart));
+      }
     });
     const sum = state.schedule.summary;
-    lines.push('合计：游玩 ' + U.toDuration(sum.totalStay) + ' · 路上 ' + U.toDuration(sum.totalTravel) + ' · ' + (sum.totalKm || 0) + ' km');
+    lines.push('合计：游玩 ' + U.toDuration(sum.totalStay) +
+      (sum.totalRest > 0 ? ' · 休息 ' + U.toDuration(sum.totalRest) : '') +
+      ' · 路上 ' + U.toDuration(sum.totalTravel) + ' · ' + (sum.totalKm || 0) + ' km');
     const text = lines.join('\n');
     navigator.clipboard.writeText(text).then(function () { toast('当天行程已复制'); },
       function () { prompt('复制下面的文字：', text); });

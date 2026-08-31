@@ -110,6 +110,9 @@
       stayMin: 60,
       arriveMode: U.DEFAULT_MODE,
       fixedStart: '',
+      travelMin: null,   // 自己填的路上时间；null = 按地图算
+      tz: null,          // 这个地点的时区；null = 跟当天基准时区一样
+      rest: null,        // 算不算休息；null = 跟着分类（住宿算休息）
       hours: '',
       notes: ''
     }, partial || {});
@@ -122,6 +125,7 @@
       date: U.addDays(null, index || 0),
       title: '第 ' + ((index || 0) + 1) + ' 天',
       startTime: '09:00',
+      tz: null,          // 这天按哪个时区推算；null = 不区分时区，跟以前一样
       stops: {}
     };
   }

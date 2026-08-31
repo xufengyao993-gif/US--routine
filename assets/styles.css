@@ -347,6 +347,26 @@ html, body {
 .sync-bar-btn:disabled { opacity: .5; cursor: default; }
 
 .badge-editing { background: #f5f3ff; }
+.badge-rest { background: #f1f5f9; color: #475569; }
+
+/* 跨时区时补的「当地几点」 */
+.stop-local, .leg-local {
+  font-size: 12px;
+  color: #7c3aed;
+  margin-top: 2px;
+}
+.leg-local { margin-top: 4px; }
+
+/* 弹窗里的勾选项 */
+.check-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13.5px;
+  margin-top: 2px;
+}
+.check-field input { margin-top: 2px; flex: 0 0 auto; }
+.check-field em { font-style: normal; display: block; }
 .stop.is-editing { border-style: dashed; }
 
 /* ---------- 顶栏菜单 ---------- */

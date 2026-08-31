@@ -129,6 +129,23 @@
         </label>
       </div>
 
+      <div class="field-row">
+        <label class="field">
+          <span>路上时间（分钟）</span>
+          <input id="f-travel" type="number" min="0" step="1" inputmode="numeric"
+                 placeholder="留空＝按地图算；坐飞机请自己填" />
+        </label>
+        <label class="field">
+          <span>当地时区 <span id="tz-status" class="field-note"></span></span>
+          <input id="f-tz" list="tzList" type="text" placeholder="跨时区才填，例 Asia/Manila" autocomplete="off" />
+        </label>
+      </div>
+
+      <label class="check-field">
+        <input id="f-rest" type="checkbox" />
+        <span>这段算休息，不计入游玩时间<em id="restHint" class="field-note"></em></span>
+      </label>
+
       <label class="field">
         <span>营业时间 <span id="hours-status" class="field-note"></span></span>
         <input id="f-hours" type="text" placeholder="例：Mo-Fr 09:00-17:00　或　24/7　（从搜索结果选地点时会自动填）" autocomplete="off" />
@@ -282,5 +299,6 @@
   <script src="js/sync.js"></script>
   <script src="js/dragsort.js"></script>
   <script src="js/app.js"></script>
+  <datalist id="tzList"></datalist>
 </body>
 </html>

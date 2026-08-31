@@ -31,6 +31,7 @@
     let prevStop = null;
     let totalTravel = 0;
     let totalStay = 0;
+    let totalRest = 0;
     let totalKm = 0;
     let totalWait = 0;
 
@@ -41,12 +42,19 @@
 
       let leg = null;
       let arrive;
+      // 自己填的路上时间（飞机、渡轮这类按路网算没有意义的）优先于一切估算
+      const manual = stop.travelMin === '' || stop.travelMin == null ? null : Math.max(0, Number(stop.travelMin));
 
       if (i === 0) {
         arrive = fixed != null ? fixed : dayStart;
       } else {
-        leg = legLookup ? legLookup(prevStop, stop, mode) : null;
-        if (!leg) leg = U.estimateLeg(prevStop, stop, mode);
+        if (manual != null && !isNaN(manual)) {
+          const guess = legLookup ? legLookup(prevStop, stop, mode) : null;
+          leg = { minutes: manual, km: guess ? guess.km : null, estimated: false, manual: true };
+        } else {
+          leg = legLookup ? legLookup(prevStop, stop, mode) : null;
+          if (!leg) leg = U.estimateLeg(prevStop, stop, mode);
+        }
         const travel = leg ? leg.minutes : 0;
         arrive = prevDepart + travel;
         totalTravel += travel;
@@ -71,7 +79,9 @@
       }
 
       const depart = start + stay;
-      totalStay += stay;
+      // 住宿（以及自己标了「算休息」的地点）不计入游玩时间：睡觉和候机都不是在玩
+      const rest = U.isRest(stop);
+      if (rest) totalRest += stay; else totalStay += stay;
 
       items.push({
         stop: stop,
@@ -84,6 +94,7 @@
           minutes: leg.minutes,
           km: leg.km,
           estimated: !!leg.estimated,
+          manual: !!leg.manual,
           // 几点出门（= 上一个地点的离开时间）
           departAt: prevDepart,
           arriveAt: arrive,
@@ -96,7 +107,9 @@
         stayMin: stay,
         waitMin: wait,
         lateBy: lateBy,
-        isFixed: fixed != null
+        isFixed: fixed != null,
+        isRest: rest,
+        manualTravel: !!(leg && leg.manual)
       });
 
       prevDepart = depart;
@@ -115,6 +128,7 @@
         dayEndAt: last ? last.departAt : null,
         totalTravel: totalTravel,
         totalStay: totalStay,
+        totalRest: totalRest,
         totalWait: totalWait,
         totalKm: Math.round(totalKm * 10) / 10,
         foodCount: stops.filter(function (s) { return s.category === 'food'; }).length,
