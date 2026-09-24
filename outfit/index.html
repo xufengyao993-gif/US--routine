@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>国庆美西衣橱</title>
+  <meta name="description" content="先录衣服，再按 9/25–10/9 美西行程每天点选搭配。">
+
+  <!-- 装到主屏幕：Safari「分享 → 添加到主屏幕」 -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="衣橱">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <meta name="theme-color" content="#f8f6f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#191517" media="(prefers-color-scheme: dark)">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Pacifico&family=ZCOOL+KuaiLe&display=swap">
+  <link rel="stylesheet" href="app.css">
+  <style>
+    /* claude.ai 会替页面做的那几条，这里自己补上 */
+    :root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+    body { margin: 0; -webkit-text-size-adjust: 100%; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <script src="seed.js"></script>
+  <script src="app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('sw.js').catch(function () {});
+      });
+    }
+  </script>
+</body>
+</html>

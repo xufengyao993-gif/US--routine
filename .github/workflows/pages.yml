@@ -16,6 +16,7 @@ on:
     branches:
       - main
       - claude/us-trip-itinerary-planner-alg1ty
+      - claude/western-trip-packing-list-dk0gl2
   workflow_dispatch:
 
 permissions:
@@ -62,8 +63,8 @@ jobs:
 
       - name: 打版本号（让 Service Worker 认出新版本）
         run: |
-          sed -i "s/__BUILD_ID__/${GITHUB_SHA::12}/" sw.js
-          grep -n "VERSION =" sw.js
+          sed -i "s/__BUILD_ID__/${GITHUB_SHA::12}/" sw.js outfit/sw.js
+          grep -n "VERSION =" sw.js outfit/sw.js
 
       # enablement: true 让工作流自己去打开 Pages，省掉手动进仓库设置那一步。
       # （私有仓库需要 GitHub Pro 及以上；免费账号请把仓库改成公开）

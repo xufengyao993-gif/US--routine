@@ -1,0 +1,16 @@
+{
+  "name": "国庆美西衣橱",
+  "short_name": "衣橱",
+  "description": "先录衣服，再按 9/25–10/9 美西行程每天点选搭配。",
+  "lang": "zh-CN",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f8f6f7",
+  "theme_color": "#f8f6f7",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

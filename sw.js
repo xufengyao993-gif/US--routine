@@ -64,6 +64,8 @@ self.addEventListener('fetch', function (event) {
   const url = new URL(req.url);
   // 跨域请求（Google Maps、Firebase）一律直连，不进缓存
   if (url.origin !== location.origin) return;
+  // outfit/ 是另一个 App（衣橱），有自己的 Service Worker，别把它的页面缓存成行程的 index.html
+  if (url.pathname.indexOf('/outfit/') !== -1) return;
 
   // 页面导航：优先拿新的，拿不到再用缓存（保证联网时永远是最新版）
   if (req.mode === 'navigate') {
