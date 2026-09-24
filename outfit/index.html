@@ -19,7 +19,9 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Pacifico&family=ZCOOL+KuaiLe&display=swap">
+  <!-- 字体放后台加载：Google 在国内连不上时，页面不能跟着一直白屏，先用系统字体显示 -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Pacifico&family=ZCOOL+KuaiLe&display=swap" media="print" onload="this.media='all'">
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Pacifico&family=ZCOOL+KuaiLe&display=swap"></noscript>
   <link rel="stylesheet" href="app.css">
   <style>
     /* claude.ai 会替页面做的那几条，这里自己补上 */
